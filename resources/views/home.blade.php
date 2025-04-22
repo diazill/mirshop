@@ -8,8 +8,8 @@
 </head>
 
 <body>
-  <div class="">
-
+  <div class="text-3xl text-teal-300">
+    <h1>Hello World</h1>
   </div>
 </body>
 

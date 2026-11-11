@@ -8,15 +8,21 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable implements FilamentUser
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, Notifiable;
 
     public function canAccessPanel(Panel $panel): bool
     {
-        return true; // atau logika akses user
+        return $this->is_active && $this->hasRole('owner', 'admin');
+    }
+
+    public function hasRole(string ...$roles): bool
+    {
+        return in_array($this->role, $roles, true);
     }
 
     /**
@@ -26,8 +32,11 @@ class User extends Authenticatable implements FilamentUser
      */
     protected $fillable = [
         'name',
+        'username',
         'email',
         'password',
+        'role',
+        'is_active',
     ];
 
     /**
@@ -50,6 +59,7 @@ class User extends Authenticatable implements FilamentUser
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_active' => 'boolean',
         ];
     }
 }

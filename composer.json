@@ -8,8 +8,11 @@
     "require": {
         "php": "^8.2",
         "filament/filament": "*",
+        "joshembling/image-optimizer": "^1.6",
         "laravel/framework": "^12.0",
-        "laravel/tinker": "^2.10.1"
+        "laravel/sanctum": "^4.0",
+        "laravel/tinker": "^2.10.1",
+        "league/flysystem-aws-s3-v3": "^3.34"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

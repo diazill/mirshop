@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\RecordsSyncDeletion;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -15,7 +16,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class ProductUnit extends Model
 {
-    use HasFactory;
+    use HasFactory, RecordsSyncDeletion;
 
     protected $fillable = [
         'product_id', 'unit_id', 'conversion_qty', 'is_base', 'barcode',

@@ -2,13 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\RecordsSyncDeletion;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ProductPrice extends Model
 {
-    use HasFactory;
+    use HasFactory, RecordsSyncDeletion;
 
     public const TYPES = [
         'eceran' => 'Eceran',

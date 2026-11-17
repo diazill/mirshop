@@ -24,7 +24,7 @@ use App\Services\StockService;
 use Filament\Forms\Components\Repeater;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
-use LogicException;
+
 use Tests\TestCase;
 
 class PurchaseTest extends TestCase
@@ -154,7 +154,7 @@ class PurchaseTest extends TestCase
         $purchase = $this->draft([[$this->sack, 1, 420000]]);
         $this->purchases->receive($purchase);
 
-        $this->expectException(LogicException::class);
+        $this->expectException(PurchaseException::class);
         $purchase->purchaseItems()->first()->update(['qty' => 5]);
     }
 
@@ -187,6 +187,40 @@ class PurchaseTest extends TestCase
         $this->assertSame('0.000', $this->feed->refresh()->current_stock);
         $this->assertSame(PurchaseStatus::Cancelled, $purchase->refresh()->status);
         $this->assertSame(1, InventoryMovement::query()->where('movement_type', MovementType::PurchaseCancel)->count());
+    }
+
+    public function test_cancel_reverses_the_quantity_actually_received_even_if_conversion_changed(): void
+    {
+        $purchase = $this->draft([[$this->sack, 2, 420000]]);
+        $this->purchases->receive($purchase);
+        $this->assertSame('100.000', $this->feed->refresh()->current_stock);
+
+        $this->sack->update(['conversion_qty' => 25]); // pemasok ganti kemasan
+
+        $this->purchases->cancel($purchase, 'Retur', $this->owner);
+
+        $this->assertSame('0.000', $this->feed->refresh()->current_stock);
+    }
+
+    public function test_receive_uses_current_conversion_and_refreshes_item_snapshot(): void
+    {
+        $purchase = $this->draft([[$this->sack, 2, 420000]]); // tersimpan saat Karung = 50 Kg
+        $this->sack->update(['conversion_qty' => 25]);
+
+        $this->purchases->receive($purchase);
+
+        $item = $purchase->purchaseItems()->first();
+        $this->assertSame('50.000', $this->feed->refresh()->current_stock);
+        $this->assertSame('50.000', $item->base_qty);
+        $this->assertSame('25.000', $item->conversion_qty);
+    }
+
+    public function test_unit_that_is_not_purchasable_is_rejected(): void
+    {
+        $this->sack->update(['is_purchasable' => false]);
+
+        $this->expectException(PurchaseException::class);
+        $this->draft([[$this->sack, 1, 420000]]);
     }
 
     public function test_received_purchase_cannot_be_cancelled_if_goods_were_sold(): void

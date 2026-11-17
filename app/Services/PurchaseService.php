@@ -86,14 +86,15 @@ class PurchaseService
                     throw new PurchaseException('Hanya owner yang bisa membatalkan pembelian yang sudah diterima.');
                 }
 
-                $items = $locked->purchaseItems()->with(['productUnit.unit', 'product'])->orderBy('product_id')->orderBy('id')->get();
+                $items = $locked->purchaseItems()->with('product')->orderBy('product_id')->orderBy('id')->get();
 
+                // Tarik sebanyak yang dulu masuk (base_qty), bukan qty × konversi saat ini:
+                // isi kemasan bisa berubah setelah barang diterima.
                 foreach ($items as $item) {
                     $this->stock->decrease(
                         product: $item->product,
-                        qty: $item->qty,
+                        qty: $item->base_qty,
                         type: MovementType::PurchaseCancel,
-                        unit: $this->unitFor($item),
                         reference: $locked,
                         notes: $reason,
                         user: $user,
@@ -117,6 +118,9 @@ class PurchaseService
         if ($item->product?->trashed()) {
             throw new PurchaseException("Produk {$item->product->title} sudah dihapus.");
         }
+
+        // Segarkan snapshot dengan konversi saat ini agar base_qty sama dengan stok yang masuk.
+        $item->save();
 
         $movement = $this->stock->increase(
             product: $item->product,

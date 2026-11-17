@@ -41,7 +41,8 @@ class StockService
         ?string $notes = null,
         ?User $user = null,
     ): InventoryMovement {
-        $qty = $this->positiveQty($qty, $product, $unit);
+        $unit = $this->resolveUnit($product, $unit);
+        $qty = $this->positiveQty($qty, $unit);
 
         return $this->apply($product, $unit, $qty, $qty, $type, $reference, null, $notes, $user);
     }
@@ -61,7 +62,8 @@ class StockService
         ?User $user = null,
         bool $allowNegative = false,
     ): InventoryMovement {
-        $qty = $this->positiveQty($qty, $product, $unit);
+        $unit = $this->resolveUnit($product, $unit);
+        $qty = $this->positiveQty($qty, $unit);
 
         return $this->apply($product, $unit, $qty, $qty->negated(), $type, $reference, null, $notes, $user, $allowNegative);
     }
@@ -88,21 +90,27 @@ class StockService
             throw new InvalidStockQuantityException('Catatan wajib diisi untuk alasan "Lainnya".');
         }
 
-        $abs = $this->positiveQty((string) $signed->abs(), $product, $unit);
+        $unit = $this->resolveUnit($product, $unit);
+        $abs = $this->positiveQty((string) $signed->abs(), $unit);
 
         return $this->apply($product, $unit, $abs, $signed->isNegative() ? $abs->negated() : $abs,
             MovementType::Adjustment, null, $reason, $notes, $user, $allowNegative);
     }
 
     /**
-     * Opname: set stok sesuai hasil hitung fisik (dalam satuan dasar).
+     * Opname: sesuaikan stok dengan hasil hitung fisik (dalam satuan dasar).
      * Selisihnya dicatat sebagai mutasi OPNAME, termasuk bila selisihnya 0 (bukti sudah dihitung).
+     *
+     * $expectedBaseQty: stok sistem yang dilihat petugas saat mulai menghitung (dari HP offline).
+     * Bila diisi, server hanya menerapkan selisih hitung − stok yang dilihat, sehingga penjualan
+     * yang terjadi selama menghitung atau sebelum sinkron tidak ikut terhapus.
      */
     public function opname(
         Product $product,
         string|int|float $countedBaseQty,
         ?string $notes = null,
         ?User $user = null,
+        string|int|float|null $expectedBaseQty = null,
     ): InventoryMovement {
         $counted = $this->decimal($countedBaseQty);
 
@@ -110,12 +118,14 @@ class StockService
             throw new InvalidStockQuantityException('Hasil hitung tidak boleh negatif.');
         }
 
-        $baseUnit = $this->baseUnit($product);
+        $baseUnit = $this->resolveUnit($product, null);
         $this->assertQtyAllowed($counted, $baseUnit);
 
-        return DB::transaction(function () use ($product, $baseUnit, $counted, $notes, $user) {
+        $expected = $expectedBaseQty === null ? null : $this->decimal($expectedBaseQty);
+
+        return DB::transaction(function () use ($product, $baseUnit, $counted, $expected, $notes, $user) {
             $locked = $this->lock($product);
-            $delta = $counted->minus($this->decimal($locked->current_stock));
+            $delta = $counted->minus($expected ?? $this->decimal($locked->current_stock));
 
             return $this->write($locked, $baseUnit, $counted, $delta, MovementType::Opname, null, null, $notes, $user);
         });
@@ -123,7 +133,7 @@ class StockService
 
     private function apply(
         Product $product,
-        ?ProductUnit $unit,
+        ProductUnit $unit,
         BigDecimal $qty,
         BigDecimal $signedQty,
         MovementType $type,
@@ -133,7 +143,6 @@ class StockService
         ?User $user,
         bool $allowNegative = false,
     ): InventoryMovement {
-        $unit ??= $this->baseUnit($product);
         $delta = $signedQty->multipliedBy($this->decimal($unit->conversion_qty))->toScale(self::SCALE, RoundingMode::HALF_UP);
 
         return DB::transaction(function () use ($product, $unit, $qty, $delta, $type, $reference, $reason, $notes, $user, $allowNegative) {
@@ -190,7 +199,7 @@ class StockService
         return Product::withTrashed()->whereKey($product->getKey())->lockForUpdate()->firstOrFail();
     }
 
-    private function positiveQty(string|int|float $qty, Product $product, ?ProductUnit $unit): BigDecimal
+    private function positiveQty(string|int|float $qty, ProductUnit $unit): BigDecimal
     {
         $value = $this->decimal($qty);
 
@@ -198,15 +207,23 @@ class StockService
             throw new InvalidStockQuantityException('Jumlah harus lebih dari 0.');
         }
 
-        $unit ??= $this->baseUnit($product);
+        $this->assertQtyAllowed($value, $unit);
+
+        return $value;
+    }
+
+    /** Satuan yang diberikan (harus milik produk ini) atau satuan dasar produk, dengan relasi unit termuat. */
+    private function resolveUnit(Product $product, ?ProductUnit $unit): ProductUnit
+    {
+        if (! $unit) {
+            return $this->baseUnit($product);
+        }
 
         if ((int) $unit->product_id !== (int) $product->getKey()) {
             throw new InvalidStockQuantityException('Satuan tidak terdaftar untuk produk ini.');
         }
 
-        $this->assertQtyAllowed($value, $unit);
-
-        return $value;
+        return $unit->loadMissing('unit');
     }
 
     private function assertQtyAllowed(BigDecimal $qty, ProductUnit $unit): void

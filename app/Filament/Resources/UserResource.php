@@ -94,6 +94,18 @@ class UserResource extends Resource
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
+                // Untuk HP hilang: semua login aplikasi HP user ini berhenti berlaku.
+                Tables\Actions\Action::make('revokeTokens')
+                    ->label('Cabut login aplikasi')
+                    ->icon('heroicon-o-no-symbol')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalDescription('User harus login ulang di aplikasi HP. Data yang belum disinkronkan di HP tetap ada di HP.')
+                    ->visible(fn (User $record): bool => (bool) auth()->user()?->hasRole('owner'))
+                    ->action(function (User $record): void {
+                        $count = $record->tokens()->delete();
+                        \Filament\Notifications\Notification::make()->success()->title("{$count} login dicabut.")->send();
+                    }),
             ])
             ->bulkActions([]);
     }

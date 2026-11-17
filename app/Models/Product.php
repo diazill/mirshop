@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\RecordsSyncDeletion;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,13 +10,16 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
+/**
+ * current_stock sengaja tidak fillable: stok hanya berubah lewat App\Services\StockService.
+ */
 class Product extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, RecordsSyncDeletion, SoftDeletes;
 
     protected $fillable = [
         'sku', 'title', 'blurb', 'price', 'cost_price', 'weight_gram',
-        'is_best_product', 'current_stock', 'min_stock', 'is_active',
+        'is_best_product', 'min_stock', 'is_active',
         'category_id', 'brand_id'
     ];
 

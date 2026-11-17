@@ -19,6 +19,11 @@ abstract class BusinessException extends RuntimeException
         return [];
     }
 
+    public function status(): int
+    {
+        return 422;
+    }
+
     public function render(Request $request): JsonResponse|false
     {
         if (! $request->expectsJson() && ! $request->is('api/*')) {
@@ -29,6 +34,6 @@ abstract class BusinessException extends RuntimeException
             'code' => $this->errorCode(),
             'message' => $this->getMessage(),
             'details' => $this->details(),
-        ], 422);
+        ], $this->status());
     }
 }

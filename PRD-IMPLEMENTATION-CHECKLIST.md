@@ -106,9 +106,9 @@ Fondasi yang dibuat setelah audit:
 - [ ] Tambah seluruh kolom/table bisnis yang belum sesuai PRD
 - [x] Fondasi peran owner/admin/kasir/gudang dan status aktif (migrasi perlu dijalankan)
 - [x] Laravel Sanctum dan API auth dasar (login, profil, logout)
-- [ ] Service layer (PricingService, StockService, OrderService, PaymentService) — StockService selesai
+- [ ] Service layer (PricingService, StockService, OrderService, PaymentService). Sudah ada: StockService, PurchaseService, PricingService, TransactionService
 - [x] Struktur API v1 untuk autentikasi dasar
-- [ ] Endpoint produk, pesanan, kasir, stok, dan pelanggan
+- [ ] Endpoint produk, pesanan, kasir, stok, dan pelanggan. Sudah ada: produk publik, kasir (`/pos/transactions`), scan barcode
 
 ### 3.2 ADM-01: Produk
 - [x] CRUD brand
@@ -119,7 +119,7 @@ Fondasi yang dibuat setelah audit:
 - [x] Product price field
 - [x] Product cost_price
 - [x] Product current_stock
-- [x] Satuan produk dinamis dan harga bertingkat (`units`, `product_units`, `product_prices`) — skema + form admin; logika harga menunggu PricingService
+- [x] Satuan produk dinamis dan harga bertingkat (`units`, `product_units`, `product_prices`): skema dan form admin selesai, logika harga menunggu PricingService
 - [x] Barcode per satuan produk (unik)
 - [x] Stok minimum (`min_stock`)
 - [ ] Akses publik vs internal sesuai harga beli rahasia
@@ -145,7 +145,7 @@ Fondasi yang dibuat setelah audit:
 ### 3.4 ADM-04: Pemasok
 - [x] CRUD supplier
 - [x] Riwayat pembelian per supplier lengkap (tab Riwayat pembelian + kolom jumlah & total dibeli)
-- [ ] Integrasi ke modul pembelian dan laporan — modul pembelian selesai, laporan belum
+- [ ] Integrasi ke modul pembelian dan laporan. Modul pembelian selesai, laporan belum
 
 ### 3.5 ADM-05: Pesanan online
 - [ ] Daftar pesanan online
@@ -158,11 +158,11 @@ Fondasi yang dibuat setelah audit:
 - [ ] Notifikasi ke customer/admin
 
 ### 3.6 ADM-06: Transaksi kasir
-- [ ] Daftar transaksi POS
-- [ ] Pembatalan transaksi sesuai izin owner
+- [x] Daftar transaksi POS (admin: Penjualan; API: `GET /pos/transactions`)
+- [x] Pembatalan transaksi sesuai izin owner
 - [ ] Retur barang/retur transaksi
-- [ ] Stok balik otomatis saat pembatalan/retur
-- [ ] Validasi hak akses owner/admin
+- [ ] Stok balik otomatis saat pembatalan/retur. Pembatalan selesai, retur belum
+- [x] Validasi hak akses owner/admin (kasir hanya melihat penjualannya sendiri, batal hanya owner)
 
 ### 3.7 ADM-07: Pelanggan
 - [ ] Modul pelanggan
@@ -197,7 +197,7 @@ Fondasi yang dibuat setelah audit:
 - `product_units.conversion_qty`: 1 satuan = N satuan dasar (mis. Karung = 50 Kg); `allow_decimal_qty` menentukan boleh tidaknya jumlah pecahan.
 - `products.price`/`cost_price` = harga per 1 satuan dasar. Satuan tanpa harga khusus memakai harga dasar × isi (aturan untuk PricingService).
 - Satu stok per produk (tidak membedakan karung tersegel vs curah); fitur "pecah karung" bisa ditambah nanti.
-- Transaksi/pembelian/mutasi wajib menyimpan snapshot satuan (`unit_name`, `conversion_qty`, `base_qty`) — dikerjakan bersama StockService.
+- Mutasi stok dan item pembelian sudah menyimpan snapshot satuan (`unit_name`, `conversion_qty`, `base_qty`). Item transaksi kasir belum.
 - Migrasi memberi produk lama satuan dasar Pcs; admin perlu meninjau dan mengganti produk curah ke Kg sebelum ada mutasi stok.
 
 ## 4. Fitur backend / API PRD
@@ -205,7 +205,7 @@ Fondasi yang dibuat setelah audit:
 ### 4.1 Layanan inti
 - [x] API auth dasar dengan Sanctum
 - [ ] Pendaftaran akun toko online dan autentikasi cookie Next.js
-- [ ] PricingService
+- [x] PricingService (harga khusus per satuan dan jenis harga, lalu harga dasar × isi)
 - [x] StockService (`increase`, `decrease`, `adjust`, `opname`)
 - [ ] OrderService
 - [ ] PaymentService
@@ -227,36 +227,52 @@ Fondasi yang dibuat setelah audit:
 - [ ] `POST /orders/{id}/payment-proof`
 
 ### 4.3 Endpoint kasir
-- [ ] `POST /pos/transactions`
-- [ ] `GET /pos/transactions`
+- [x] `POST /pos/transactions` (wajib header `Idempotency-Key`)
+- [x] `GET /pos/transactions` (+ `GET /pos/transactions/{id}`, `POST /pos/transactions/{id}/cancel`)
 - [ ] `GET /pos/orders`
 - [ ] `PATCH /pos/orders/{id}/status`
-- [ ] `GET /stock/{barcode}`
+- [x] `GET /stock/{barcode}`, dibuat sebagai `GET /barcode/{barcode}` untuk kasir dan gudang
 - [ ] `POST /stock/receive`
 - [ ] `POST /stock/adjust`
 - [ ] `POST /stock/opname`
 - [ ] `GET /customers`
 - [ ] `POST /customers`
 
+### 4.4 Sinkron aplikasi HP offline-first (tambahan di luar PRD)
+- [x] Perangkat terdaftar (menu Pengaturan > Perangkat). Token login diikat ke perangkat lewat `device_code` saat login; menonaktifkan perangkat langsung mematikan semua tokennya
+- [x] Cabut login aplikasi HP per user (menu Users) dan per token (menu Pengaturan > Token API); token berlaku 30 hari
+- [x] `GET /sync/catalog`: lengkap (pagi) atau perubahan sejak `since`, termasuk stok, satuan, barcode, harga, dan data terhapus; HPP tidak dikirim
+- [x] `POST /sync/transactions`: kirim banyak nota offline, hasil per nota (created / duplicate / rejected)
+- [x] Nota offline memakai waktu kejadian (`occurred_at`) dan nomor nota dari HP (`K01-YYYYMMDD-####`)
+- [x] Harga kasir offline diterima; beda dari harga resmi ditandai "Harga beda", di bawah HPP ditandai "Di bawah HPP" dan muncul di dashboard
+- [x] Stok boleh minus untuk nota offline; ditandai "Stok minus"
+- [x] Penjualan > filter "Perlu ditinjau" dan aksi "Sudah ditinjau"
+- [x] Nota offline > 24 jam ditandai "Sinkron terlambat", > 3 hari ditolak
+- [x] `cashier_id` hanya untuk user yang pernah login di perangkat yang sama
+- [x] Batas ukuran: 100 nota dan 2.000 baris per sinkron, nominal maksimal Rp1 miliar per nota
+- [x] Opname offline mengirim stok yang dilihat saat mulai hitung (`expectedBaseQty`) agar penjualan di antaranya tidak terhapus
+- [ ] Endpoint gudang offline (terima barang, koreksi, opname) lewat jalur sinkron
+- [ ] Riwayat harga, agar "harga beda" dibandingkan dengan harga resmi pada waktu nota, bukan saat sinkron
+
 ## 5. Aturan bisnis kunci PRD
 
 - [x] Stok atomik dengan transaction + row locking
 - [x] Satuan dasar dan konversi satuan (stok desimal dalam satuan dasar, satuan dasar terkunci setelah ada mutasi)
-- [ ] Harga tercatat saat transaksi
+- [x] Harga tercatat saat transaksi (harga, HPP, satuan dan isi per item)
 - [ ] Harga beli rahasia untuk owner/admin tertentu
-- [ ] Pembatalan & retur mencatat stok kebalikan — pembatalan pembelian selesai (owner, mutasi PURCHASE_CANCEL); penjualan/retur belum
+- [ ] Pembatalan & retur mencatat stok kebalikan. Pembatalan pembelian selesai (owner, mutasi PURCHASE_CANCEL), penjualan dan retur belum
 - [ ] Status pesanan flow lengkap
 - [ ] Tidak ada penghapusan permanen untuk transaksi/pembelian/stok
-- [ ] `Idempotency-Key` diterapkan pada endpoint pembuatan transaksi
-- [ ] Error handling dengan format seragam
+- [x] `Idempotency-Key` diterapkan pada endpoint pembuatan transaksi (kirim ulang mengembalikan nota yang sama, kunci sama dengan isi berbeda ditolak 409)
+- [x] Error handling dengan format seragam (`{code, message, details|errors}`)
 - [x] Kode `STOK_TIDAK_CUKUP` tersedia (JSON 422 `{code, message, details}`)
 
 ## 6. Kebutuhan non-fungsional PRD
 
-- [ ] Security / authorization strict
+- [ ] Security / authorization strict. Audit API 17 Nov 2026: 6 celah orang dalam di API kasir/sinkron sudah ditutup; error API seragam termasuk 404/405/429
 - [ ] HTTPS
 - [ ] Server-side validation
-- [ ] Rate limit login / checkout
+- [x] Rate limit login / checkout (login 5/menit, buat penjualan 60/menit)
 - [ ] Secrets hanya di `.env`
 - [ ] Backup DB schedule
 - [ ] Queue jobs for async tasks

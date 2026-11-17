@@ -6,8 +6,8 @@ use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Exceptions\PurchaseException;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use LogicException;
 
 /**
  * Baris pembelian. qty & buy_price dalam satuan yang dipilih (mis. 10 Karung @ Rp420.000);
@@ -34,7 +34,10 @@ class PurchaseItem extends Model
 
             $unit = ProductUnit::query()->with('unit')->find($item->product_unit_id);
             if (! $unit) {
-                throw new LogicException('Satuan pembelian tidak ditemukan.');
+                throw new PurchaseException('Satuan pembelian tidak ditemukan.');
+            }
+            if (! $unit->is_purchasable) {
+                throw new PurchaseException("Satuan {$unit->unit?->name} tidak bisa dipakai untuk pembelian.");
             }
 
             $qty = BigDecimal::of((string) $item->qty);
@@ -54,7 +57,7 @@ class PurchaseItem extends Model
         $purchase = $this->purchase()->first();
 
         if ($purchase && ! $purchase->isDraft()) {
-            throw new LogicException('Item pembelian yang sudah diterima/dibatalkan tidak bisa diubah.');
+            throw new PurchaseException('Item pembelian yang sudah diterima atau dibatalkan tidak bisa diubah.');
         }
     }
 

@@ -67,9 +67,17 @@ class PublicProductApiTest extends TestCase
             ->assertJsonPath('data.0.id', $matching->id);
     }
 
+    public function test_invalid_query_uses_the_api_error_shape(): void
+    {
+        $this->getJson('/api/v1/products?per_page=999')
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'VALIDASI_GAGAL')
+            ->assertJsonStructure(['code', 'message', 'errors' => ['per_page']]);
+    }
+
     private function createProduct(Category $category, Brand $brand, array $attributes = []): Product
     {
-        return Product::query()->create(array_merge([
+        return Product::query()->forceCreate(array_merge([
             'sku' => null,
             'title' => 'Produk Contoh',
             'price' => 12000,

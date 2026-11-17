@@ -97,7 +97,7 @@ class PurchaseResource extends Resource
                             ->visible(fn (?Purchase $record): bool => (bool) $record?->cancelled_at)
                             ->content(fn (?Purchase $record): string => $record->cancelled_at->format('d M Y H:i')
                                 . ($record->canceller ? ' oleh ' . $record->canceller->name : '')
-                                . ' — ' . $record->cancel_reason),
+                                . '. Alasan: ' . $record->cancel_reason),
                     ]),
 
                 Forms\Components\Section::make('Barang')
@@ -153,6 +153,7 @@ class PurchaseResource extends Resource
                     ->label('Jumlah')
                     ->numeric()
                     ->minValue(0.001)
+                    ->maxValue(99999)
                     ->required()
                     ->live(onBlur: true)
                     ->rules([fn (Get $get): Closure => static::validateQtyForUnit($get('product_unit_id'))])
@@ -162,6 +163,7 @@ class PurchaseResource extends Resource
                     ->numeric()
                     ->integer()
                     ->minValue(0)
+                    ->maxValue(100_000_000)
                     ->prefix('Rp')
                     ->required()
                     ->live(onBlur: true)

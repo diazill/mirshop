@@ -134,7 +134,7 @@ class ProductUnitTest extends TestCase
 
     public function test_low_stock_uses_min_stock(): void
     {
-        $product = new Product(['current_stock' => '20.000', 'min_stock' => '25.000']);
+        $product = (new Product())->forceFill(['current_stock' => '20.000', 'min_stock' => '25.000']);
         $this->assertTrue($product->isLowStock());
 
         $product->min_stock = null;

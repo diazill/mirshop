@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Enums\PaymentMethod;
 use App\Http\Controllers\Controller;
+use Dedoc\Scramble\Attributes\Group;
 use App\Models\Product;
 use App\Models\ProductPrice;
 use App\Models\ProductUnit;
@@ -22,6 +23,7 @@ use Illuminate\Validation\Rule;
  * Tombol Sinkron: POST /sync/transactions untuk nota offline, lalu GET /sync/catalog?since=<server_time
  * terakhir> untuk perubahan katalog dan stok. Terapkan `deletions` dulu, baru data lainnya.
  */
+#[Group('Sinkron HP offline', 'Wajib token yang login dengan device_code', weight: 3)]
 class SyncController extends Controller
 {
     public const MAX_SALES_PER_SYNC = 100;
@@ -30,6 +32,13 @@ class SyncController extends Controller
 
     public const MAX_UNIT_PRICE = 100_000_000;
 
+    /**
+     * Tarik katalog dan stok.
+     *
+     * Tanpa `since`: data lengkap (dipakai tiap pagi). Dengan `since` = `server_time` sinkron terakhir:
+     * hanya yang berubah. Terapkan `deletions` dulu, lalu upsert sisanya. HPP tidak dikirim.
+     * Peran: owner, admin, kasir, gudang.
+     */
     public function catalog(Request $request): JsonResponse
     {
         $data = $request->validate(['since' => ['nullable', 'date', 'before_or_equal:now']]);
@@ -101,6 +110,15 @@ class SyncController extends Controller
         ]);
     }
 
+    /**
+     * Kirim nota offline (tombol Sinkron).
+     *
+     * Hasil per nota: `created`, `duplicate` (sudah pernah masuk, anggap terkirim) atau `rejected`
+     * (lihat `code` dan `message`). Nota diterima apa adanya, tetapi ditandai untuk owner bila harga beda,
+     * di bawah HPP, stok jadi minus, atau terlambat > 24 jam. Nota > 3 hari ditolak.
+     * Maksimal 100 nota dan 2.000 baris barang per permintaan. `invoice_no` harus diawali kode perangkat.
+     * Peran: owner, admin, kasir.
+     */
     public function transactions(Request $request, TransactionService $service): JsonResponse
     {
         $data = $request->validate([

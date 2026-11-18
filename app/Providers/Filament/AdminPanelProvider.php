@@ -6,7 +6,9 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\NavigationItem;
 use Filament\Pages;
+use Illuminate\Support\Facades\Gate;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -31,6 +33,15 @@ class AdminPanelProvider extends PanelProvider
                 'primary' => Color::Amber,
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
+            ->navigationItems([
+                // Dokumentasi API dari Scramble (/docs/api), dibatasi gate viewApiDocs.
+                NavigationItem::make('Dokumentasi API')
+                    ->url('/docs/api', shouldOpenInNewTab: true)
+                    ->icon('heroicon-o-book-open')
+                    ->group('Pengaturan')
+                    ->sort(100)
+                    ->visible(fn (): bool => Gate::allows('viewApiDocs')),
+            ])
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([
                 Pages\Dashboard::class,

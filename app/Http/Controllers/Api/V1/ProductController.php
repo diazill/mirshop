@@ -3,14 +3,24 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use Dedoc\Scramble\Attributes\Group;
 use App\Models\Product;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
+#[Group('Katalog publik', 'Untuk toko online (Next.js), tanpa login', weight: 1)]
 class ProductController extends Controller
 {
+    /**
+     * Daftar produk aktif.
+     *
+     * Untuk toko online. HPP dan jumlah stok tidak dikirim, hanya `stock_status` (tersedia/habis).
+     * Dibatasi 120 permintaan per menit.
+     *
+     * @unauthenticated
+     */
     public function index(Request $request): JsonResponse
     {
         $filters = $request->validate([

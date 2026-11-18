@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api\V1;
 use App\Enums\PaymentMethod;
 use App\Enums\TransactionStatus;
 use App\Http\Controllers\Controller;
+use Dedoc\Scramble\Attributes\HeaderParameter;
+use Dedoc\Scramble\Attributes\Group;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
 use App\Services\TransactionService;
@@ -17,12 +19,22 @@ use Illuminate\Validation\Rule;
  * POST wajib membawa header Idempotency-Key (UUID per transaksi) agar pengiriman ulang
  * saat sinyal putus tidak mencatat penjualan dua kali.
  */
+#[Group('Kasir (POS)', 'Penjualan online dari aplikasi HP', weight: 2)]
 class PosTransactionController extends Controller
 {
     public function __construct(private readonly TransactionService $transactions)
     {
     }
 
+    /**
+     * Buat penjualan (online).
+     *
+     * Harga dihitung server; kasir hanya mengirim satuan dan jumlah. Satu nota tersimpan utuh
+     * atau tidak sama sekali (mis. `STOK_TIDAK_CUKUP`). Kirim ulang dengan `Idempotency-Key` yang sama
+     * mengembalikan nota yang sama (200) tanpa mencatat dua kali. Tunai wajib `paid_amount` ≥ total.
+     * Peran: owner, admin, kasir.
+     */
+    #[HeaderParameter('Idempotency-Key', 'UUID unik per nota, dibuat aplikasi. Wajib.', required: true, example: '7b0e3b4e-2f8a-4d5c-9a51-3c1f0e9d2a10')]
     public function store(Request $request): JsonResponse
     {
         $key = $request->header('Idempotency-Key');
@@ -59,6 +71,11 @@ class PosTransactionController extends Controller
         );
     }
 
+    /**
+     * Daftar penjualan.
+     *
+     * Default hari ini, berdasarkan waktu kejadian. Kasir hanya melihat notanya sendiri.
+     */
     public function index(Request $request): JsonResponse
     {
         $filters = $request->validate([
@@ -83,6 +100,9 @@ class PosTransactionController extends Controller
         return response()->json($page);
     }
 
+    /**
+     * Detail nota (untuk cetak struk).
+     */
     public function show(Request $request, Transaction $transaction): JsonResponse
     {
         $this->authorizeView($request, $transaction);
@@ -90,6 +110,11 @@ class PosTransactionController extends Controller
         return response()->json(['data' => $this->payload($transaction->load('transactionItems.product'))]);
     }
 
+    /**
+     * Batalkan penjualan.
+     *
+     * Hanya owner. Stok semua barang dikembalikan.
+     */
     public function cancel(Request $request, Transaction $transaction): JsonResponse
     {
         $data = $request->validate(['reason' => ['required', 'string', 'max:1000']]);

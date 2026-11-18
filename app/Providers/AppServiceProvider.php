@@ -4,10 +4,15 @@ namespace App\Providers;
 
 use App\Models\PersonalAccessToken;
 use App\Models\Purchase;
-use Laravel\Sanctum\Sanctum;
 use App\Models\Transaction;
+use App\Models\User;
+use Dedoc\Scramble\Scramble;
+use Dedoc\Scramble\Support\Generator\OpenApi;
+use Dedoc\Scramble\Support\Generator\SecurityScheme;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Sanctum\Sanctum;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -32,5 +37,13 @@ class AppServiceProvider extends ServiceProvider
             'purchase' => Purchase::class,
             'transaction' => Transaction::class,
         ]);
+
+        // Dokumentasi API (/docs/api): hanya owner dan admin yang login di panel admin.
+        Gate::define('viewApiDocs', fn (?User $user): bool => (bool) $user?->is_active && $user->hasRole('owner', 'admin'));
+
+        // Semua endpoint memakai Bearer token kecuali yang ditandai @unauthenticated.
+        Scramble::configure()->withDocumentTransformers(function (OpenApi $openApi): void {
+            $openApi->secure(SecurityScheme::http('bearer'));
+        });
     }
 }

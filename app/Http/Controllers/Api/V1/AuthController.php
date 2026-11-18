@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use Dedoc\Scramble\Attributes\Group;
 use App\Models\Device;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -11,11 +12,21 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Laravel\Sanctum\PersonalAccessToken;
 
+#[Group('Login', 'Login staf dan token aplikasi', weight: 0)]
 class AuthController extends Controller
 {
     /** Masa berlaku token aplikasi HP. Setelah itu login ulang (perlu online). */
     public const TOKEN_DAYS = 30;
 
+    /**
+     * Login staf.
+     *
+     * Kirim `device_code` (kode HP dari menu Perangkat) agar token terikat ke HP tersebut;
+     * tanpa itu token tidak bisa memakai endpoint `/sync/*`. Token berlaku 30 hari.
+     * Dibatasi 5 percobaan per menit.
+     *
+     * @unauthenticated
+     */
     public function login(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
@@ -88,6 +99,9 @@ class AuthController extends Controller
         ]);
     }
 
+    /**
+     * Profil user yang sedang login.
+     */
     public function me(Request $request): JsonResponse
     {
         return response()->json([
@@ -95,6 +109,9 @@ class AuthController extends Controller
         ]);
     }
 
+    /**
+     * Keluar: mencabut token yang sedang dipakai.
+     */
     public function logout(Request $request): JsonResponse
     {
         $token = $request->user()->currentAccessToken();

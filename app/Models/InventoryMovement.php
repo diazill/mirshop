@@ -23,8 +23,10 @@ class InventoryMovement extends Model
     protected $fillable = [
         'product_id', 'product_unit_id', 'movement_type', 'reference_type', 'reference_id',
         'unit_name', 'conversion_qty', 'qty', 'qty_change', 'stock_before', 'stock_after',
-        'reason', 'notes', 'user_id',
+        'reason', 'notes', 'user_id', 'idempotency_key', 'request_hash',
     ];
+
+    protected $hidden = ['request_hash'];
 
     protected $casts = [
         'movement_type' => MovementType::class,

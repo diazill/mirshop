@@ -21,7 +21,8 @@ class AuthController extends Controller
     /**
      * Login staf.
      *
-     * Kirim `device_code` (kode HP dari menu Perangkat) agar token terikat ke HP tersebut;
+     * Isi `login` dengan username atau email (tidak membedakan huruf besar/kecil).
+     * Field `email` lama masih diterima. Kirim `device_code` (kode HP dari menu Perangkat) agar token terikat ke HP tersebut;
      * tanpa itu token tidak bisa memakai endpoint `/sync/*`. Token berlaku 30 hari.
      * Dibatasi 5 percobaan per menit.
      *
@@ -30,13 +31,16 @@ class AuthController extends Controller
     public function login(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'email' => ['required', 'email'],
+            /** Username atau email. */
+            'login' => ['required_without:email', 'nullable', 'string', 'max:255'],
+            /** Cara lama: email. Pakai `login` untuk aplikasi baru. */
+            'email' => ['required_without:login', 'nullable', 'string', 'max:255'],
             'password' => ['required', 'string'],
             'device_name' => ['required', 'string', 'max:100'],
             'device_code' => ['nullable', 'string', 'max:10'],
         ], [
-            'email.required' => 'Email wajib diisi.',
-            'email.email' => 'Format email tidak valid.',
+            'login.required_without' => 'Username atau email wajib diisi.',
+            'email.required_without' => 'Username atau email wajib diisi.',
             'password.required' => 'Kata sandi wajib diisi.',
             'device_name.required' => 'Nama perangkat wajib diisi.',
             'device_name.max' => 'Nama perangkat maksimal 100 karakter.',
@@ -51,12 +55,12 @@ class AuthController extends Controller
         }
 
         $credentials = $validator->validated();
-        $user = User::query()->where('email', $credentials['email'])->first();
+        $user = User::findForLogin($credentials['login'] ?? $credentials['email']);
 
         if (! $user || ! Hash::check($credentials['password'], $user->password)) {
             return response()->json([
                 'code' => 'KREDENSIAL_TIDAK_VALID',
-                'message' => 'Email atau kata sandi tidak valid.',
+                'message' => 'Username/email atau kata sandi salah.',
             ], 401);
         }
 

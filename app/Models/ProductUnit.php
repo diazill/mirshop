@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Auth;
 
 /**
  * Satuan yang dipakai sebuah produk. Stok selalu dicatat dalam satuan dasar (is_base),
@@ -29,6 +30,7 @@ class ProductUnit extends Model
         'allow_decimal_qty' => 'boolean',
         'is_sellable' => 'boolean',
         'is_purchasable' => 'boolean',
+        'barcode_updated_at' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -41,6 +43,12 @@ class ProductUnit extends Model
             if ($productUnit->barcode === '') {
                 $productUnit->barcode = null;
             }
+
+            // Audit barcode: siapa dan kapan terakhir diubah (dari admin maupun aplikasi HP).
+            if ($productUnit->isDirty('barcode') && ($productUnit->exists || $productUnit->barcode !== null)) {
+                $productUnit->barcode_updated_by = Auth::id();
+                $productUnit->barcode_updated_at = now();
+            }
         });
     }
 
@@ -52,6 +60,11 @@ class ProductUnit extends Model
     public function unit(): BelongsTo
     {
         return $this->belongsTo(Unit::class);
+    }
+
+    public function barcodeUpdatedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'barcode_updated_by');
     }
 
     public function prices(): HasMany

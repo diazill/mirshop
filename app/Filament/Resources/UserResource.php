@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\UserResource\Pages;
 use App\Filament\Resources\UserResource\RelationManagers;
+use App\Enums\UserRole;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -36,6 +37,26 @@ class UserResource extends Resource
                             ->label('Nama')
                             ->required()
                             ->maxLength(255),
+                        Forms\Components\TextInput::make('username')
+                            ->label('Username')
+                            ->required()
+                            ->minLength(3)
+                            ->maxLength(30)
+                            ->regex('/^[A-Za-z0-9._-]+$/')
+                            // Username disimpan huruf kecil, jadi cek unik tanpa membedakan huruf besar/kecil.
+                            ->rule(fn (?User $record): \Closure => function (string $attribute, mixed $value, \Closure $fail) use ($record): void {
+                                $taken = User::query()
+                                    ->whereRaw('lower(username) = ?', [mb_strtolower(trim((string) $value))])
+                                    ->when($record, fn ($query) => $query->whereKeyNot($record->getKey()))
+                                    ->exists();
+
+                                if ($taken) {
+                                    $fail('Username sudah dipakai.');
+                                }
+                            })
+                            ->dehydrateStateUsing(fn (?string $state): ?string => filled($state) ? mb_strtolower(trim($state)) : null)
+                            ->validationMessages(['regex' => 'Hanya huruf, angka, titik, garis bawah, dan tanda minus.'])
+                            ->helperText('Dipakai untuk login di admin dan aplikasi HP. Huruf besar/kecil dianggap sama.'),
                         Forms\Components\TextInput::make('email')
                             ->label('Email')
                             ->email()
@@ -51,12 +72,7 @@ class UserResource extends Resource
                             ->dehydrated(fn (?string $state): bool => filled($state)),
                         Forms\Components\Select::make('role')
                             ->label('Peran')
-                            ->options([
-                                'owner' => 'Owner',
-                                'admin' => 'Admin',
-                                'cashier' => 'Kasir',
-                                'warehouse' => 'Staf gudang',
-                            ])
+                            ->options(UserRole::options())
                             ->default('admin')
                             ->visible(fn (): bool => auth()->user()?->hasRole('owner') ?? false)
                             ->disabled(fn (?User $record): bool => $record?->getKey() === auth()->id()),
@@ -74,17 +90,16 @@ class UserResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('name')->searchable(),
+                Tables\Columns\TextColumn::make('name')->label('Nama')->searchable(),
+                Tables\Columns\TextColumn::make('username')
+                    ->label('Username')
+                    ->searchable()
+                    ->placeholder('Belum diisi')
+                    ->copyable(),
                 Tables\Columns\TextColumn::make('email')->searchable(),
                 Tables\Columns\TextColumn::make('role')
                     ->label('Peran')
-                    ->formatStateUsing(fn (string $state): string => match ($state) {
-                        'owner' => 'Owner',
-                        'admin' => 'Admin',
-                        'cashier' => 'Kasir',
-                        'warehouse' => 'Staf gudang',
-                        default => $state,
-                    }),
+                    ->formatStateUsing(fn (string $state): string => UserRole::tryFrom($state)?->label() ?? $state),
                 Tables\Columns\IconColumn::make('is_active')
                     ->label('Aktif')
                     ->boolean(),

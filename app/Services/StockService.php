@@ -70,6 +70,8 @@ class StockService
 
     /**
      * Koreksi manual dengan alasan wajib. $qty bertanda: positif menambah, negatif mengurangi.
+     *
+     * @param  array{idempotency_key?: string, request_hash?: string}  $movementAttributes  ikut disimpan di mutasi
      */
     public function adjust(
         Product $product,
@@ -79,6 +81,7 @@ class StockService
         ?string $notes = null,
         ?User $user = null,
         bool $allowNegative = false,
+        array $movementAttributes = [],
     ): InventoryMovement {
         $signed = $this->decimal($qty);
 
@@ -94,7 +97,7 @@ class StockService
         $abs = $this->positiveQty((string) $signed->abs(), $unit);
 
         return $this->apply($product, $unit, $abs, $signed->isNegative() ? $abs->negated() : $abs,
-            MovementType::Adjustment, null, $reason, $notes, $user, $allowNegative);
+            MovementType::Adjustment, null, $reason, $notes, $user, $allowNegative, $movementAttributes);
     }
 
     /**
@@ -104,6 +107,10 @@ class StockService
      * $expectedBaseQty: stok sistem yang dilihat petugas saat mulai menghitung (dari HP offline).
      * Bila diisi, server hanya menerapkan selisih hitung − stok yang dilihat, sehingga penjualan
      * yang terjadi selama menghitung atau sebelum sinkron tidak ikut terhapus.
+     *
+     * $reason: alasan opname (mis. stok_awal), disimpan seperti pada adjust().
+     *
+     * @param  array{idempotency_key?: string, request_hash?: string}  $movementAttributes  ikut disimpan di mutasi
      */
     public function opname(
         Product $product,
@@ -111,7 +118,13 @@ class StockService
         ?string $notes = null,
         ?User $user = null,
         string|int|float|null $expectedBaseQty = null,
+        ?AdjustmentReason $reason = null,
+        array $movementAttributes = [],
     ): InventoryMovement {
+        if ($reason === AdjustmentReason::Other && blank($notes)) {
+            throw new InvalidStockQuantityException('Catatan wajib diisi untuk alasan "Lainnya".');
+        }
+
         $counted = $this->decimal($countedBaseQty);
 
         if ($counted->isNegative()) {
@@ -123,11 +136,15 @@ class StockService
 
         $expected = $expectedBaseQty === null ? null : $this->decimal($expectedBaseQty);
 
-        return DB::transaction(function () use ($product, $baseUnit, $counted, $expected, $notes, $user) {
+        if ($expected?->isNegative()) {
+            throw new InvalidStockQuantityException('Stok yang dilihat saat mulai hitung tidak boleh negatif.');
+        }
+
+        return DB::transaction(function () use ($product, $baseUnit, $counted, $expected, $notes, $user, $reason, $movementAttributes) {
             $locked = $this->lock($product);
             $delta = $counted->minus($expected ?? $this->decimal($locked->current_stock));
 
-            return $this->write($locked, $baseUnit, $counted, $delta, MovementType::Opname, null, null, $notes, $user);
+            return $this->write($locked, $baseUnit, $counted, $delta, MovementType::Opname, null, $reason, $notes, $user, $movementAttributes);
         });
     }
 
@@ -142,10 +159,11 @@ class StockService
         ?string $notes,
         ?User $user,
         bool $allowNegative = false,
+        array $movementAttributes = [],
     ): InventoryMovement {
         $delta = $signedQty->multipliedBy($this->decimal($unit->conversion_qty))->toScale(self::SCALE, RoundingMode::HALF_UP);
 
-        return DB::transaction(function () use ($product, $unit, $qty, $delta, $type, $reference, $reason, $notes, $user, $allowNegative) {
+        return DB::transaction(function () use ($product, $unit, $qty, $delta, $type, $reference, $reason, $notes, $user, $allowNegative, $movementAttributes) {
             $locked = $this->lock($product);
             $before = $this->decimal($locked->current_stock);
 
@@ -153,7 +171,7 @@ class StockService
                 throw new InsufficientStockException($locked, (string) $before, (string) $delta->abs());
             }
 
-            return $this->write($locked, $unit, $qty, $delta, $type, $reference, $reason, $notes, $user);
+            return $this->write($locked, $unit, $qty, $delta, $type, $reference, $reason, $notes, $user, $movementAttributes);
         });
     }
 
@@ -167,6 +185,7 @@ class StockService
         ?AdjustmentReason $reason,
         ?string $notes,
         ?User $user,
+        array $movementAttributes = [],
     ): InventoryMovement {
         $before = $this->decimal($locked->current_stock);
         $after = $before->plus($delta)->toScale(self::SCALE);
@@ -189,6 +208,8 @@ class StockService
             'reason' => $reason?->value,
             'notes' => $notes,
             'user_id' => ($user ?? Auth::user())?->getKey(),
+            'idempotency_key' => $movementAttributes['idempotency_key'] ?? null,
+            'request_hash' => $movementAttributes['request_hash'] ?? null,
         ]);
 
         return $movement;

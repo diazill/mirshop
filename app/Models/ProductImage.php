@@ -23,6 +23,9 @@ class ProductImage extends Model
         'is_primary' => 'boolean',
     ];
 
+    /** Tambah/hapus foto ikut memperbarui products.updated_at, jadi sinkron katalog ?since= membawanya. */
+    protected $touches = ['product'];
+
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);

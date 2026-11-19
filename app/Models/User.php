@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -23,6 +24,21 @@ class User extends Authenticatable implements FilamentUser
     public function hasRole(string ...$roles): bool
     {
         return in_array($this->role, $roles, true);
+    }
+
+    /** Username disimpan huruf kecil tanpa spasi tepi; kosong berarti tidak punya username. */
+    protected function username(): Attribute
+    {
+        return Attribute::set(fn (?string $value): ?string => filled($value) ? mb_strtolower(trim($value)) : null);
+    }
+
+    /** Cari user dari isian login: email (bila berbentuk email) atau username, tanpa membedakan huruf besar/kecil. */
+    public static function findForLogin(string $login): ?self
+    {
+        $login = mb_strtolower(trim($login));
+        $column = filter_var($login, FILTER_VALIDATE_EMAIL) ? 'email' : 'username';
+
+        return static::query()->whereRaw("lower({$column}) = ?", [$login])->first();
     }
 
     /**

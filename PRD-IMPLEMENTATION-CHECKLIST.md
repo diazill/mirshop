@@ -233,8 +233,11 @@ Fondasi yang dibuat setelah audit:
 - [ ] `PATCH /pos/orders/{id}/status`
 - [x] `GET /stock/{barcode}`, dibuat sebagai `GET /barcode/{barcode}` untuk kasir dan gudang
 - [ ] `POST /stock/receive`
-- [ ] `POST /stock/adjust`
-- [ ] `POST /stock/opname`
+- [x] `POST /stock/adjust` (owner/admin/gudang, wajib `Idempotency-Key`, stok tidak boleh minus)
+- [x] `POST /stock/opname` (owner/admin/gudang, wajib `Idempotency-Key`, alasan wajib, memakai `expected_base_qty`; hasil langsung berlaku)
+- [x] GDG-05: daftarkan barcode ke satuan produk (`PUT /product-units/{id}/barcode`, unik, tercatat siapa dan kapan)
+- [x] Upload foto produk dari HP (`POST /products/{id}/images`, disimpan seperti upload admin)
+- [x] Katalog sinkron membawa `image_url` dan `image_count` (produk tanpa foto bisa ditandai di HP)
 - [ ] `GET /customers`
 - [ ] `POST /customers`
 

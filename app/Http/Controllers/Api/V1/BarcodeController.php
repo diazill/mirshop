@@ -4,9 +4,9 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use Dedoc\Scramble\Attributes\Group;
-use App\Models\ProductPrice;
 use App\Models\ProductUnit;
 use App\Services\PricingService;
+use App\Support\ProductUnitPayload;
 use Illuminate\Http\JsonResponse;
 
 /**
@@ -37,29 +37,6 @@ class BarcodeController extends Controller
             ], 404);
         }
 
-        $product = $unit->product;
-
-        return response()->json(['data' => [
-            'product_unit_id' => $unit->id,
-            'product_id' => $product->id,
-            'title' => $product->title,
-            'is_active' => $product->is_active,
-            'unit_name' => $unit->unit->name,
-            'conversion_qty' => $unit->conversion_qty,
-            'base_unit_name' => $product->baseUnit?->unit?->name,
-            'allow_decimal_qty' => $unit->allow_decimal_qty,
-            'is_sellable' => $unit->is_sellable,
-            'is_purchasable' => $unit->is_purchasable,
-            'price' => $pricing->unitPrice($unit, 1),
-            'price_tiers' => $unit->prices
-                ->sortBy([['price_type', 'asc'], ['min_qty', 'asc']])
-                ->map(fn (ProductPrice $price): array => [
-                    'price_type' => $price->price_type,
-                    'min_qty' => $price->min_qty,
-                    'price' => $price->price,
-                ])
-                ->values(),
-            'stock_base_qty' => $product->current_stock,
-        ]]);
+        return response()->json(['data' => ProductUnitPayload::make($unit, $pricing)]);
     }
 }

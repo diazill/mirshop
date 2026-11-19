@@ -7,6 +7,7 @@ use App\Filament\Resources\ProductResource\Pages;
 use App\Filament\Resources\ProductResource\RelationManagers;
 use App\Models\Product;
 use App\Models\ProductPrice;
+use App\Models\ProductUnit;
 use App\Models\Unit;
 use Closure;
 use Filament\Forms;
@@ -231,7 +232,11 @@ class ProductResource extends Resource
                         Forms\Components\TextInput::make('barcode')
                             ->label('Barcode')
                             ->maxLength(255)
-                            ->unique('product_units', 'barcode', ignoreRecord: true),
+                            ->unique('product_units', 'barcode', ignoreRecord: true)
+                            ->helperText(fn (?ProductUnit $record): ?string => $record?->barcode_updated_at
+                                ? 'Diubah ' . $record->barcode_updated_at->format('d M Y H:i')
+                                    . ($record->barcodeUpdatedBy ? ' oleh ' . $record->barcodeUpdatedBy->name : '')
+                                : null),
                         Forms\Components\Toggle::make('allow_decimal_qty')
                             ->label('Boleh pecahan')
                             ->inline(false)

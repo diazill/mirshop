@@ -5,6 +5,9 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BarcodeController;
 use App\Http\Controllers\Api\V1\PosTransactionController;
 use App\Http\Controllers\Api\V1\ProductController;
+use App\Http\Controllers\Api\V1\ProductImageController;
+use App\Http\Controllers\Api\V1\ProductUnitBarcodeController;
+use App\Http\Controllers\Api\V1\WarehouseStockController;
 use App\Http\Controllers\Api\V1\SyncController;
 
 Route::prefix('v1')->group(function () {
@@ -29,6 +32,14 @@ Route::prefix('v1')->group(function () {
             Route::get('/transactions/{transaction}', [PosTransactionController::class, 'show']);
             Route::post('/transactions/{transaction}/cancel', [PosTransactionController::class, 'cancel'])
                 ->middleware('role:owner');
+        });
+
+        // Kelola barang (aplikasi HP, online): barcode, stok, foto.
+        Route::middleware('role:owner,admin,gudang')->group(function () {
+            Route::put('/product-units/{productUnit}/barcode', [ProductUnitBarcodeController::class, 'update']);
+            Route::post('/stock/opname', [WarehouseStockController::class, 'opname'])->middleware('throttle:60,1');
+            Route::post('/stock/adjust', [WarehouseStockController::class, 'adjust'])->middleware('throttle:60,1');
+            Route::post('/products/{product}/images', [ProductImageController::class, 'store'])->middleware('throttle:20,1');
         });
 
         // Aplikasi HP offline-first: wajib header X-Device-Code dari perangkat terdaftar.

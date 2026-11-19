@@ -74,6 +74,6 @@ class ApiAuthenticationTest extends TestCase
             ->assertUnprocessable()
             ->assertJsonPath('code', 'VALIDASI_GAGAL')
             ->assertJsonPath('message', 'Data yang dikirim tidak valid.')
-            ->assertJsonPath('errors.email.0', 'Email wajib diisi.');
+            ->assertJsonPath('errors.login.0', 'Username atau email wajib diisi.');
     }
 }

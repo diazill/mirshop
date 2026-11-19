@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\UserRole;
 use App\Models\User;
 use Illuminate\Console\Command;
 
@@ -14,7 +15,7 @@ class AssignUserRole extends Command
     public function handle(): int
     {
         $role = $this->argument('role');
-        $allowedRoles = ['owner', 'admin', 'cashier', 'warehouse'];
+        $allowedRoles = UserRole::values();
 
         if (! in_array($role, $allowedRoles, true)) {
             $this->error('Role harus salah satu dari: ' . implode(', ', $allowedRoles));

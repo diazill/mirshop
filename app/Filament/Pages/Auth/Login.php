@@ -2,35 +2,36 @@
 
 namespace App\Filament\Pages\Auth;
 
+use App\Models\User;
 use Filament\Forms\Components\Component;
 use Filament\Forms\Components\TextInput;
 use Filament\Pages\Auth\Login as BaseLogin;
 
+/** Login panel admin dengan username atau email. */
 class Login extends BaseLogin
 {
-    /**
-     * Override the default email form field.
-     */
     protected function getEmailFormComponent(): Component
     {
         return TextInput::make('email')
-            ->label('Email address or Username')
+            ->label('Username atau email')
             ->required()
-            ->autocomplete()
+            ->autocomplete('username')
             ->autofocus()
             ->extraInputAttributes(['tabindex' => 1]);
     }
 
     /**
-     * Determine credentials based on input.
+     * Cari user sekali (tanpa membedakan huruf besar/kecil) lalu login berdasarkan id,
+     * agar username "Budi" dan "budi" dianggap sama di Postgres.
      */
     protected function getCredentialsFromFormData(array $data): array
     {
-        $login_type = filter_var($data['email'], FILTER_VALIDATE_EMAIL) ? 'email' : 'username';
+        $user = User::findForLogin((string) $data['email']);
 
         return [
-            $login_type => $data['email'],
-            'password'  => $data['password'],
+            // Tidak ditemukan: id yang tidak mungkin ada, Filament menampilkan pesan gagal standar.
+            'id' => $user?->getKey() ?? 0,
+            'password' => $data['password'],
         ];
     }
 }

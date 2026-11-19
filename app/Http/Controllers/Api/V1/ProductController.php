@@ -5,9 +5,9 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use Dedoc\Scramble\Attributes\Group;
 use App\Models\Product;
+use App\Support\ProductImageUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 #[Group('Katalog publik', 'Untuk toko online (Next.js), tanpa login', weight: 1)]
@@ -74,7 +74,7 @@ class ProductController extends Controller
         $images = $product->images
             ->map(fn ($image): array => [
                 'id' => $image->id,
-                'url' => $this->publicImageUrl($image->image_url),
+                'url' => ProductImageUrl::for($image->image_url),
                 'is_primary' => $image->is_primary,
                 'sort_order' => $image->sort_order,
             ])
@@ -101,12 +101,4 @@ class ProductController extends Controller
         ];
     }
 
-    private function publicImageUrl(string $imagePath): string
-    {
-        if (str_starts_with($imagePath, 'https://') || str_starts_with($imagePath, 'http://')) {
-            return $imagePath;
-        }
-
-        return Storage::disk('s3')->url($imagePath);
-    }
 }

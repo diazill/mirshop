@@ -10,6 +10,7 @@ use App\Models\ProductPrice;
 use App\Models\ProductUnit;
 use App\Models\Unit;
 use App\Services\TransactionService;
+use App\Support\ProductImageUrl;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -50,7 +51,14 @@ class SyncController extends Controller
         $changed = fn ($query) => $since ? $query->where('updated_at', '>=', $since) : $query;
 
         $products = $changed(Product::query()->when($since, fn ($q) => $q->withTrashed()))
-            ->with(['category:id,name', 'brand:id,name'])
+            ->with([
+                'category:id,name',
+                'brand:id,name',
+                'images' => fn ($q) => $q->select(['id', 'product_id', 'image_url', 'is_primary', 'sort_order'])
+                    ->orderByDesc('is_primary')
+                    ->orderBy('sort_order'),
+            ])
+            ->withCount('images')
             ->orderBy('id')
             ->get()
             ->map(fn (Product $p): array => [
@@ -64,6 +72,9 @@ class SyncController extends Controller
                 'min_stock' => $p->min_stock,
                 'is_active' => $p->is_active,
                 'is_deleted' => $p->trashed(),
+                // Foto utama (atau foto pertama); null = produk belum punya foto.
+                'image_url' => ProductImageUrl::for($p->images->first()?->image_url),
+                'image_count' => $p->images_count,
                 'updated_at' => $p->updated_at?->toIso8601String(),
             ]);
 

@@ -213,7 +213,7 @@ Fondasi yang dibuat setelah audit:
 - [ ] Scheduled tasks untuk pembatalan otomatis
 
 ### 4.2 Endpoint API publik
-- [ ] `GET /products`
+- [x] `GET /products` (aktif saja; cari, filter kategori/merek, urut; `stock_status` tanpa jumlah; throttle 120/menit)
 - [ ] `GET /products/{slug}`
 - [ ] `GET /categories`
 - [ ] `GET /store/schedule`

@@ -10,6 +10,8 @@ use Dedoc\Scramble\Attributes\Group;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
 use App\Services\TransactionService;
+use App\Support\StoreProfile;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -32,6 +34,7 @@ class PosTransactionController extends Controller
      * Harga dihitung server; kasir hanya mengirim satuan dan jumlah. Satu nota tersimpan utuh
      * atau tidak sama sekali (mis. `STOK_TIDAK_CUKUP`). Kirim ulang dengan `Idempotency-Key` yang sama
      * mengembalikan nota yang sama (200) tanpa mencatat dua kali. Tunai wajib `paid_amount` ≥ total.
+     * `customer_id` opsional: kosong = pembeli umum; pelanggan nonaktif/terhapus → 422 `PELANGGAN_TIDAK_AKTIF`.
      * Peran: owner, admin, kasir.
      */
     #[HeaderParameter('Idempotency-Key', 'UUID unik per nota, dibuat aplikasi. Wajib.', required: true, example: '7b0e3b4e-2f8a-4d5c-9a51-3c1f0e9d2a10')]
@@ -54,6 +57,7 @@ class PosTransactionController extends Controller
             'payment_method' => ['required', Rule::enum(PaymentMethod::class)],
             'paid_amount' => ['nullable', 'integer', 'min:0', 'max:' . TransactionService::MAX_AMOUNT],
             'notes' => ['nullable', 'string', 'max:1000'],
+            'customer_id' => ['nullable', 'integer', 'min:1'],
         ]);
 
         $transaction = $this->transactions->createSale(
@@ -63,6 +67,7 @@ class PosTransactionController extends Controller
             paidAmount: $data['paid_amount'] ?? null,
             idempotencyKey: $key,
             notes: $data['notes'] ?? null,
+            customerId: isset($data['customer_id']) ? (int) $data['customer_id'] : null,
         );
 
         return response()->json(
@@ -95,9 +100,60 @@ class PosTransactionController extends Controller
             ->when($filters['status'] ?? null, fn ($q, $status) => $q->where('status', $status))
             ->orderByDesc('id')
             ->paginate($filters['per_page'] ?? 50)
-            ->through(fn (Transaction $t): array => $this->summary($t));
+            ->through(fn (Transaction $t): array => $this->row($t));
 
         return response()->json($page);
+    }
+
+    /**
+     * Ringkasan penjualan per hari (Beranda kasir).
+     *
+     * `date` bawaan hari ini menurut jam toko (zona waktu di Pengaturan Toko, bawaan WIB). Nota batal
+     * tidak dihitung dalam `count`, `total`, `by_method`, dan `hourly`; jumlahnya ada di `cancelled_count`.
+     * `hourly` hanya berisi jam yang ada penjualannya. Kasir hanya melihat notanya sendiri.
+     * Peran: owner, admin, kasir.
+     */
+    public function summary(Request $request): JsonResponse
+    {
+        $filters = $request->validate(['date' => ['nullable', 'date_format:Y-m-d']]);
+
+        $user = $request->user();
+        $timezone = StoreProfile::timezone();
+        $day = isset($filters['date'])
+            ? CarbonImmutable::createFromFormat('!Y-m-d', $filters['date'], $timezone)
+            : CarbonImmutable::now($timezone)->startOfDay();
+
+        // Batas hari toko diubah ke zona aplikasi (UTC) karena begitulah occurred_at disimpan.
+        $sales = Transaction::query()
+            ->when(! $user->hasRole('owner', 'admin'), fn ($q) => $q->where('user_id', $user->id))
+            ->where('occurred_at', '>=', $day->setTimezone(config('app.timezone')))
+            ->where('occurred_at', '<', $day->addDay()->setTimezone(config('app.timezone')))
+            ->get(['id', 'occurred_at', 'status', 'total_amount', 'payment_method']);
+
+        [$cancelled, $valid] = $sales->partition(fn (Transaction $t): bool => $t->status === TransactionStatus::Cancelled);
+
+        $byMethod = collect(PaymentMethod::cases())
+            ->mapWithKeys(fn (PaymentMethod $m): array => [$m->value => (int) $valid->where('payment_method', $m)->sum('total_amount')]);
+
+        $hourly = $valid
+            ->groupBy(fn (Transaction $t): int => $t->occurred_at->setTimezone($timezone)->hour)
+            ->map(fn ($group, int $hour): array => [
+                'hour' => $hour,
+                'count' => $group->count(),
+                'total' => (int) $group->sum('total_amount'),
+            ])
+            ->sortKeys()
+            ->values();
+
+        return response()->json([
+            'date' => $day->toDateString(),
+            'timezone' => $timezone,
+            'count' => $valid->count(),
+            'total' => (int) $valid->sum('total_amount'),
+            'by_method' => $byMethod,
+            'cancelled_count' => $cancelled->count(),
+            'hourly' => $hourly,
+        ]);
     }
 
     /**
@@ -134,7 +190,7 @@ class PosTransactionController extends Controller
         );
     }
 
-    private function summary(Transaction $t): array
+    private function row(Transaction $t): array
     {
         return [
             'id' => $t->id,
@@ -144,6 +200,7 @@ class PosTransactionController extends Controller
             'payment_method' => $t->payment_method->value,
             'items_count' => $t->transaction_items_count ?? $t->transactionItems->count(),
             'cashier_name' => $t->cashier_name,
+            'customer' => $t->customerSummary(),
             'source' => $t->source,
             'needs_review' => $t->needs_review,
             'occurred_at' => $t->occurred_at?->toIso8601String(),
@@ -153,7 +210,7 @@ class PosTransactionController extends Controller
 
     private function payload(Transaction $t): array
     {
-        return $this->summary($t) + [
+        return $this->row($t) + [
             'paid_amount' => $t->paid_amount,
             'change_amount' => $t->change_amount,
             'notes' => $t->notes,

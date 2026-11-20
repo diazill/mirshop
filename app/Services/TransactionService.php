@@ -6,8 +6,10 @@ use App\Enums\MovementType;
 use App\Enums\PaymentMethod;
 use App\Enums\TransactionStatus;
 use App\Exceptions\BusinessException;
+use App\Exceptions\CustomerUnavailableException;
 use App\Exceptions\IdempotencyConflictException;
 use App\Exceptions\TransactionException;
+use App\Models\Customer;
 use App\Models\Device;
 use App\Models\ProductUnit;
 use App\Models\Transaction;
@@ -31,7 +33,7 @@ use Illuminate\Support\Facades\DB;
  */
 class TransactionService
 {
-    /** Jenis harga yang boleh dipilih kasir. "langganan" menunggu modul pelanggan. */
+    /** Jenis harga yang boleh dipilih kasir. "langganan" menunggu fitur harga per pelanggan (ditunda). */
     public const CASHIER_PRICE_TYPES = ['eceran', 'grosir'];
 
     /** Nota offline lebih tua dari ini ditolak (mencegah nota fiktif di hari yang sudah tutup buku). */
@@ -60,12 +62,20 @@ class TransactionService
         ?int $paidAmount = null,
         ?string $idempotencyKey = null,
         ?string $notes = null,
+        ?int $customerId = null,
     ): Transaction {
-        $hash = hash('sha256', json_encode([$lines, $method->value, $paidAmount, $notes]));
+        // customer_id hanya ikut di-hash bila diisi: nota tanpa pelanggan punya hash yang sama seperti dulu.
+        $hash = hash('sha256', json_encode(
+            $customerId === null
+                ? [$lines, $method->value, $paidAmount, $notes]
+                : [$lines, $method->value, $paidAmount, $notes, $customerId],
+        ));
 
         if ($idempotencyKey && $existing = $this->findReplay($cashier, $idempotencyKey, $hash)) {
             return $existing;
         }
+
+        $customer = $customerId === null ? null : $this->activeCustomer($customerId);
 
         $priced = $this->priceLines($lines, offline: false);
         $total = $this->total($priced);
@@ -87,6 +97,7 @@ class TransactionService
                 'device' => null,
                 'synced_by' => null,
                 'late_sync' => false,
+                'customer' => $customer,
             ]);
         } catch (UniqueConstraintViolationException $exception) {
             // Dua permintaan dengan kunci sama tiba bersamaan: yang kalah mengembalikan hasil pemenang.
@@ -191,6 +202,7 @@ class TransactionService
             $total = $this->total($priced);
             $method = PaymentMethod::from($sale['payment_method']);
             [$paid, $change] = $this->settle($method, $total, $sale['paid_amount'] ?? null);
+            [$customer, $customerDropped, $droppedName] = $this->offlineCustomer($sale['customer_id'] ?? null);
 
             $transaction = $this->persist($priced, [
                 'cashier' => $cashier,
@@ -207,6 +219,9 @@ class TransactionService
                 'device' => $device,
                 'synced_by' => $syncedBy,
                 'late_sync' => $lateSync,
+                'customer' => $customer,
+                'customer_dropped' => $customerDropped,
+                'dropped_customer_name' => $droppedName,
             ]);
 
             return $result + ['status' => 'created'] + $this->resultData($transaction);
@@ -237,8 +252,12 @@ class TransactionService
         $priceMismatch = $priced->contains(fn (array $line): bool => $line['official'] !== null && $line['official'] !== $line['price']);
         $belowCost = $offline && $priced->contains(fn (array $line): bool => $line['price'] < $line['cost']);
         $lateSync = $sale['late_sync'];
+        /** @var Customer|null $customer */
+        $customer = $sale['customer'] ?? null;
+        // Nota offline menyebut pelanggan yang sudah tidak ada/aktif: disimpan tanpa pelanggan, ditinjau owner.
+        $customerDropped = $sale['customer_dropped'] ?? false;
 
-        return DB::transaction(function () use ($priced, $sale, $offline, $priceMismatch, $belowCost, $lateSync) {
+        return DB::transaction(function () use ($priced, $sale, $offline, $priceMismatch, $belowCost, $lateSync, $customer, $customerDropped) {
             /** @var User $cashier */
             $cashier = $sale['cashier'];
 
@@ -251,6 +270,10 @@ class TransactionService
                 'user_id' => $cashier->getKey(),
                 'device_id' => $sale['device']?->getKey(),
                 'synced_by' => $sale['synced_by']?->getKey(),
+                'customer_id' => $customer?->getKey(),
+                // Salinan nama untuk struk/riwayat. Pelanggan yang dilepas: namanya tetap dicatat sebagai jejak tinjauan.
+                'customer_name' => $customer?->name ?? ($sale['dropped_customer_name'] ?? null),
+                'customer_dropped' => $customerDropped,
                 'cashier_name' => $cashier->name,
                 'total_amount' => $sale['total'],
                 'payment_method' => $sale['method'],
@@ -262,6 +285,9 @@ class TransactionService
                 'price_mismatch' => $priceMismatch,
                 'below_cost' => $belowCost,
                 'late_sync' => $lateSync,
+                // Diisi eksplisit agar respons selalu boolean (bukan null) untuk nota tanpa tanda.
+                'stock_conflict' => false,
+                'needs_review' => false,
             ]);
 
             if ($sale['invoice_no'] === null) {
@@ -306,7 +332,7 @@ class TransactionService
                 $stockConflict = $stockConflict || BigDecimal::of((string) $movement->stock_after)->isNegative();
             }
 
-            if ($stockConflict || $priceMismatch || $belowCost || $lateSync) {
+            if ($stockConflict || $priceMismatch || $belowCost || $lateSync || $customerDropped) {
                 $transaction->forceFill([
                     'stock_conflict' => $stockConflict,
                     'needs_review' => true,
@@ -472,7 +498,9 @@ class TransactionService
             throw new TransactionException('Nota lebih tua dari ' . self::OFFLINE_MAX_AGE_DAYS . ' hari. Hubungi owner.');
         }
 
-        return $time;
+        // Eloquent menyimpan jam apa adanya tanpa mengonversi zona: 08:00+07:00 akan terbaca 08:00 UTC
+        // (15:00 WIB). Ubah ke zona aplikasi dulu agar waktu yang tersimpan benar.
+        return $time->setTimezone(config('app.timezone'));
     }
 
     private function resultData(Transaction $transaction): array
@@ -486,7 +514,37 @@ class TransactionService
             'stock_conflict' => $transaction->stock_conflict,
             'below_cost' => $transaction->below_cost,
             'late_sync' => $transaction->late_sync,
+            'customer_id' => $transaction->customer_id,
+            'customer_dropped' => $transaction->customer_dropped,
         ];
+    }
+
+    /** Nota online: pelanggan harus ada, aktif, dan belum dihapus. */
+    private function activeCustomer(int $customerId): Customer
+    {
+        return Customer::query()->active()->find($customerId)
+            ?? throw new CustomerUnavailableException();
+    }
+
+    /**
+     * Nota offline: barang sudah keluar, jadi pelanggan yang sudah nonaktif/terhapus/tidak dikenal
+     * tidak membuat nota ditolak. Nota disimpan tanpa pelanggan dan ditandai untuk ditinjau.
+     *
+     * @return array{0: ?Customer, 1: bool, 2: ?string} [pelanggan, dilepas?, nama pelanggan yang dilepas]
+     */
+    private function offlineCustomer(mixed $customerId): array
+    {
+        if ($customerId === null || $customerId === '') {
+            return [null, false, null];
+        }
+
+        $customer = Customer::withTrashed()->find((int) $customerId);
+
+        if ($customer && $customer->is_active && ! $customer->trashed()) {
+            return [$customer, false, null];
+        }
+
+        return [null, true, $customer?->name];
     }
 
     private function qty(mixed $value): BigDecimal

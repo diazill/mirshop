@@ -62,6 +62,12 @@ class TransactionResource extends Resource
                         : null)
                     ->sortable(),
                 Tables\Columns\TextColumn::make('cashier_name')->label('Kasir')->searchable(),
+                Tables\Columns\TextColumn::make('customer_name')
+                    ->label('Pelanggan')
+                    ->state(fn (Transaction $record): ?string => $record->customer_id ? $record->customer_name : null)
+                    ->placeholder('Umum')
+                    ->searchable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('transaction_items_count')->label('Item')->counts('transactionItems'),
                 Tables\Columns\TextColumn::make('total_amount')
                     ->label('Total')
@@ -119,6 +125,16 @@ class TransactionResource extends Resource
                     ->state(fn (Transaction $record): array => static::reviewFlags($record))
                     ->visible(fn (Transaction $record): bool => $record->needs_review),
                 Infolists\Components\TextEntry::make('cashier_name')->label('Kasir'),
+                Infolists\Components\TextEntry::make('customer_name')
+                    ->label('Pelanggan')
+                    ->state(fn (Transaction $record): string => match (true) {
+                        $record->customer_id !== null => $record->customer_name,
+                        $record->customer_dropped => 'Umum (pelanggan ' . ($record->customer_name ?? 'tak dikenal') . ' sudah nonaktif/terhapus saat sinkron)',
+                        default => 'Umum',
+                    })
+                    ->url(fn (Transaction $record): ?string => $record->customer && ! $record->customer->trashed()
+                        ? CustomerResource::getUrl('edit', ['record' => $record->customer_id])
+                        : null),
                 Infolists\Components\TextEntry::make('status')
                     ->label('Status')
                     ->badge()
@@ -168,6 +184,7 @@ class TransactionResource extends Resource
             $record->price_mismatch ? 'Harga beda' : null,
             $record->stock_conflict ? 'Stok minus' : null,
             $record->late_sync ? 'Sinkron terlambat' : null,
+            $record->customer_dropped ? 'Pelanggan tidak aktif' : null,
         ]));
     }
 

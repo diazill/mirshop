@@ -20,7 +20,7 @@ class Transaction extends Model
 
     protected $fillable = [
         'invoice_no', 'occurred_at', 'channel', 'source', 'status', 'user_id', 'device_id', 'synced_by',
-        'cashier_name', 'total_amount', 'price_mismatch', 'stock_conflict', 'below_cost', 'late_sync', 'needs_review',
+        'customer_id', 'customer_name', 'customer_dropped', 'cashier_name', 'total_amount', 'price_mismatch', 'stock_conflict', 'below_cost', 'late_sync', 'needs_review',
         'payment_method', 'paid_amount', 'change_amount', 'notes', 'idempotency_key', 'request_hash',
     ];
 
@@ -37,6 +37,7 @@ class Transaction extends Model
         'stock_conflict' => 'boolean',
         'below_cost' => 'boolean',
         'late_sync' => 'boolean',
+        'customer_dropped' => 'boolean',
         'needs_review' => 'boolean',
     ];
 
@@ -50,6 +51,18 @@ class Transaction extends Model
     public function cashier(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    /** Pelanggan (termasuk yang sudah dihapus, untuk riwayat). Null = pembeli umum. */
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class)->withTrashed();
+    }
+
+    /** {id, name} untuk respons API; null = pembeli umum. */
+    public function customerSummary(): ?array
+    {
+        return $this->customer_id ? ['id' => $this->customer_id, 'name' => $this->customer_name] : null;
     }
 
     public function device(): BelongsTo

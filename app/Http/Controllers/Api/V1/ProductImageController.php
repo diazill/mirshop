@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
-#[Group('Gudang', 'Kelola barang dari aplikasi HP: barcode, stok, foto. Online.', weight: 4)]
+#[Group('Gudang', 'Kelola barang dari aplikasi HP: barcode, stok, foto. Online.', weight: 5)]
 class ProductImageController extends Controller
 {
     /** Folder sama dengan upload dari admin (Filament). */

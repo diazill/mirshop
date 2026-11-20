@@ -165,14 +165,14 @@ Fondasi yang dibuat setelah audit:
 - [x] Validasi hak akses owner/admin (kasir hanya melihat penjualannya sendiri, batal hanya owner)
 
 ### 3.7 ADM-07: Pelanggan
-- [ ] Modul pelanggan
-- [ ] Riwayat belanja pelanggan
-- [ ] Harga langganan / customer pricing
-- [ ] Saldo piutang / bon
+- [x] Modul pelanggan (menu Penjualan > Pelanggan: cari, ubah, nonaktifkan; hapus hanya owner; nomor HP unik dan disimpan 08xxx)
+- [x] Riwayat belanja pelanggan (tab Riwayat nota di panel; 10 nota terakhir di `GET /customers/{id}`)
+- [ ] Harga langganan / customer pricing (ditunda owner; kolom `customers.price_type` sudah disiapkan, belum dipakai)
+- [ ] Saldo piutang / bon (ditunda owner; kolom `customers.credit_limit` sudah disiapkan, belum dipakai)
 
 ### 3.8 ADM-08: Pengaturan toko
 - [ ] Store schedules flow lengkap
-- [ ] Informasi toko
+- [x] Informasi toko (menu Pengaturan > Pengaturan Toko, owner: nama, alamat, telepon, catatan kaki struk, logo, zona waktu; `GET /store`)
 - [ ] Metode pembayaran
 - [ ] Area dan biaya antar
 - [ ] Nomor WhatsApp admin
@@ -238,14 +238,18 @@ Fondasi yang dibuat setelah audit:
 - [x] GDG-05: daftarkan barcode ke satuan produk (`PUT /product-units/{id}/barcode`, unik, tercatat siapa dan kapan)
 - [x] Upload foto produk dari HP (`POST /products/{id}/images`, disimpan seperti upload admin)
 - [x] Katalog sinkron membawa `image_url` dan `image_count` (produk tanpa foto bisa ditandai di HP)
-- [ ] `GET /customers`
-- [ ] `POST /customers`
+- [x] `GET /customers` (cari nama/HP, pelanggan aktif; + `GET /customers/{id}` dengan 10 nota terakhir)
+- [x] `POST /customers` (tambah cepat, wajib `Idempotency-Key`; HP sudah dipakai → 409 `PELANGGAN_SUDAH_ADA`)
+- [x] POS-05: nota boleh berpelanggan (`customer_id` opsional di `POST /pos/transactions` dan sinkron offline)
+- [x] POS-07: kepala struk dari `GET /store` (juga ikut `store` di katalog sinkron)
+- [x] `GET /pos/summary`: ringkasan hari ini (total, jumlah nota, per metode, per jam) menurut jam toko
 
 ### 4.4 Sinkron aplikasi HP offline-first (tambahan di luar PRD)
 - [x] Perangkat terdaftar (menu Pengaturan > Perangkat). Token login diikat ke perangkat lewat `device_code` saat login; menonaktifkan perangkat langsung mematikan semua tokennya
 - [x] Cabut login aplikasi HP per user (menu Users) dan per token (menu Pengaturan > Token API); token berlaku 30 hari
 - [x] `GET /sync/catalog`: lengkap (pagi) atau perubahan sejak `since`, termasuk stok, satuan, barcode, harga, dan data terhapus; HPP tidak dikirim
 - [x] `POST /sync/transactions`: kirim banyak nota offline, hasil per nota (created / duplicate / rejected)
+- [x] Katalog sinkron membawa `customers` (aktif; dihapus/dinonaktifkan masuk `deletions`, tidak dikirim ke gudang). Nota offline dengan pelanggan yang sudah nonaktif/terhapus tetap diterima tanpa pelanggan dan ditandai "Pelanggan tidak aktif"
 - [x] Nota offline memakai waktu kejadian (`occurred_at`) dan nomor nota dari HP (`K01-YYYYMMDD-####`)
 - [x] Harga kasir offline diterima; beda dari harga resmi ditandai "Harga beda", di bawah HPP ditandai "Di bawah HPP" dan muncul di dashboard
 - [x] Stok boleh minus untuk nota offline; ditandai "Stok minus"

@@ -32,10 +32,13 @@ class ApiDocsTest extends TestCase
         $spec = $this->get('/docs/api.json')->assertOk()->json();
 
         $this->assertSame(
-            ['Login', 'Katalog publik', 'Kasir (POS)', 'Sinkron HP offline', 'Gudang'],
+            ['Login', 'Katalog publik', 'Kasir (POS)', 'Pelanggan', 'Sinkron HP offline', 'Gudang'],
             array_column($spec['tags'], 'name'),
         );
         $this->assertArrayHasKey('/v1/pos/transactions', $spec['paths']);
+        $this->assertArrayHasKey('/v1/pos/summary', $spec['paths']);
+        $this->assertArrayHasKey('/v1/customers', $spec['paths']);
+        $this->assertArrayHasKey('/v1/store', $spec['paths']);
         $this->assertArrayHasKey('/v1/sync/transactions', $spec['paths']);
         $this->assertSame([], $spec['paths']['/v1/products']['get']['security']);
         $this->assertContains(

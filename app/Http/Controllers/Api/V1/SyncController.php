@@ -5,12 +5,14 @@ namespace App\Http\Controllers\Api\V1;
 use App\Enums\PaymentMethod;
 use App\Http\Controllers\Controller;
 use Dedoc\Scramble\Attributes\Group;
+use App\Models\Customer;
 use App\Models\Product;
 use App\Models\ProductPrice;
 use App\Models\ProductUnit;
 use App\Models\Unit;
 use App\Services\TransactionService;
 use App\Support\ProductImageUrl;
+use App\Support\StoreProfile;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -24,7 +26,7 @@ use Illuminate\Validation\Rule;
  * Tombol Sinkron: POST /sync/transactions untuk nota offline, lalu GET /sync/catalog?since=<server_time
  * terakhir> untuk perubahan katalog dan stok. Terapkan `deletions` dulu, baru data lainnya.
  */
-#[Group('Sinkron HP offline', 'Wajib token yang login dengan device_code', weight: 3)]
+#[Group('Sinkron HP offline', 'Wajib token yang login dengan device_code', weight: 4)]
 class SyncController extends Controller
 {
     public const MAX_SALES_PER_SYNC = 100;
@@ -38,6 +40,9 @@ class SyncController extends Controller
      *
      * Tanpa `since`: data lengkap (dipakai tiap pagi). Dengan `since` = `server_time` sinkron terakhir:
      * hanya yang berubah. Terapkan `deletions` dulu, lalu upsert sisanya. HPP tidak dikirim.
+     * `customers` hanya pelanggan aktif; pelanggan yang dihapus atau dinonaktifkan masuk `deletions`
+     * (`table: customers`). Untuk peran gudang `customers` selalu kosong (tidak perlu data pelanggan).
+     * `store` = info toko untuk kepala struk offline, selalu dikirim lengkap.
      * Peran: owner, admin, kasir, gudang.
      */
     public function catalog(Request $request): JsonResponse
@@ -108,7 +113,29 @@ class SyncController extends Controller
                 ->where('deleted_at', '>=', $since)
                 ->orderBy('id')
                 ->get(['table_name as table', 'record_id as id'])
+                ->map(fn (object $row): array => ['table' => $row->table, 'id' => (int) $row->id])
             : collect();
+
+        $withCustomers = $request->user()->hasRole('owner', 'admin', 'kasir');
+
+        $customers = $withCustomers
+            ? $changed(Customer::query()->active())
+                ->orderBy('id')
+                ->get()
+                ->map(fn (Customer $c): array => $c->toApi() + ['updated_at' => $c->updated_at?->toIso8601String()])
+            : collect();
+
+        if ($since && $withCustomers) {
+            // Hapus (soft delete) dan nonaktifkan sama-sama mengubah updated_at: keduanya dihapus dari HP.
+            $removed = Customer::withTrashed()
+                ->where('updated_at', '>=', $since)
+                ->where(fn ($q) => $q->whereNotNull('deleted_at')->orWhere('is_active', false))
+                ->orderBy('id')
+                ->pluck('id')
+                ->map(fn (int $id): array => ['table' => 'customers', 'id' => $id]);
+
+            $deletions = $deletions->concat($removed)->values();
+        }
 
         return response()->json([
             'server_time' => $serverTime->toIso8601String(),
@@ -118,6 +145,8 @@ class SyncController extends Controller
             'products' => $products,
             'product_units' => $productUnits,
             'product_prices' => $prices,
+            'customers' => $customers,
+            'store' => StoreProfile::payload(),
         ]);
     }
 
@@ -126,7 +155,9 @@ class SyncController extends Controller
      *
      * Hasil per nota: `created`, `duplicate` (sudah pernah masuk, anggap terkirim) atau `rejected`
      * (lihat `code` dan `message`). Nota diterima apa adanya, tetapi ditandai untuk owner bila harga beda,
-     * di bawah HPP, stok jadi minus, atau terlambat > 24 jam. Nota > 3 hari ditolak.
+     * di bawah HPP, stok jadi minus, terlambat > 24 jam, atau `customer_id` menunjuk pelanggan yang sudah
+     * nonaktif/terhapus (nota disimpan tanpa pelanggan, `customer_dropped: true`). Nota > 3 hari ditolak.
+     * Pelanggan baru dari HP: kirim dulu lewat POST /customers, lalu pakai `id` dari server.
      * Maksimal 100 nota dan 2.000 baris barang per permintaan. `invoice_no` harus diawali kode perangkat.
      * Peran: owner, admin, kasir.
      */
@@ -141,6 +172,8 @@ class SyncController extends Controller
             'transactions.*.paid_amount' => ['nullable', 'integer', 'min:0', 'max:' . TransactionService::MAX_AMOUNT],
             'transactions.*.notes' => ['nullable', 'string', 'max:1000'],
             'transactions.*.cashier_id' => ['nullable', 'integer'],
+            // Pelanggan nonaktif/terhapus tidak membuat nota ditolak: disimpan tanpa pelanggan + ditinjau.
+            'transactions.*.customer_id' => ['nullable', 'integer', 'min:1'],
             'transactions.*.items' => ['required', 'array', 'min:1', 'max:200'],
             'transactions.*.items.*' => ['array'],
             'transactions.*.items.*.product_unit_id' => ['required', 'integer'],

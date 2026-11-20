@@ -13,7 +13,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-#[Group('Gudang', 'Kelola barang dari aplikasi HP: barcode, stok, foto. Online.', weight: 4)]
+#[Group('Gudang', 'Kelola barang dari aplikasi HP: barcode, stok, foto. Online.', weight: 5)]
 class ProductUnitBarcodeController extends Controller
 {
     /**

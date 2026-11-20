@@ -6,6 +6,7 @@ use App\Enums\MovementType;
 use App\Filament\Resources\ApiTokenResource\Pages\ListApiTokens;
 use App\Filament\Resources\TransactionResource\Pages\ListTransactions;
 use App\Filament\Widgets\SalesReviewAlert;
+use App\Models\Customer;
 use App\Models\Device;
 use App\Models\PersonalAccessToken;
 use App\Models\Product;
@@ -309,6 +310,92 @@ class OfflineSyncTest extends TestCase
             ->callTableAction('delete', $token);
 
         $this->catalog()->assertUnauthorized();
+    }
+
+    public function test_catalog_carries_active_customers_store_info_and_customer_deletions(): void
+    {
+        $budi = Customer::query()->create(['name' => 'Budi', 'phone' => '081234567890']);
+        $rina = Customer::query()->create(['name' => 'Rina']);
+        $dodi = Customer::query()->create(['name' => 'Dodi']);
+        $old = Customer::query()->create(['name' => 'Lama', 'is_active' => false]);
+
+        $full = $this->catalog()->assertOk();
+        $this->assertEqualsCanonicalizing([$budi->id, $rina->id, $dodi->id], array_column($full->json('customers'), 'id'));
+        $this->assertSame('081234567890', collect($full->json('customers'))->firstWhere('id', $budi->id)['phone']);
+        $this->assertSame('Terima kasih', $full->json('store.receipt_footer'));
+
+        $since = $full->json('server_time');
+        $this->travel(1)->minutes();
+
+        $budi->update(['name' => 'Budi Santoso']);
+        $rina->update(['is_active' => false]);
+        $dodi->delete();
+        $old->forceDelete();
+
+        $delta = $this->catalog($since)->assertOk();
+        $this->assertSame([['id' => $budi->id, 'name' => 'Budi Santoso']], array_map(
+            fn (array $c): array => ['id' => $c['id'], 'name' => $c['name']],
+            $delta->json('customers'),
+        ));
+        $removed = collect($delta->json('deletions'))->where('table', 'customers')->pluck('id')->all();
+        $this->assertEqualsCanonicalizing([$rina->id, $dodi->id, $old->id], $removed);
+
+        // Gudang tidak menerima data pelanggan.
+        $warehouse = $this->login($this->user('gudang'), 'K01')->json('access_token');
+        $this->api('get', '/api/v1/sync/catalog', [], $warehouse)->assertOk()->assertJsonCount(0, 'customers');
+    }
+
+    public function test_offline_sale_keeps_its_customer_and_removed_customer_does_not_reject_the_sale(): void
+    {
+        $budi = Customer::query()->create(['name' => 'Budi']);
+        $gone = Customer::query()->create(['name' => 'Pak Hilang']);
+        $gone->delete();
+        $inactive = Customer::query()->create(['name' => 'Bu Libur', 'is_active' => false]);
+
+        $result = $this->sync([
+            ['customer_id' => $budi->id] + $this->sale('c-1', 'K01-20261120-0001', now()->subHour(), [[$this->kg, 1, 9000]]),
+            ['customer_id' => $gone->id] + $this->sale('c-2', 'K01-20261120-0002', now()->subMinutes(50), [[$this->kg, 1, 9000]]),
+            ['customer_id' => $inactive->id] + $this->sale('c-3', 'K01-20261120-0003', now()->subMinutes(40), [[$this->kg, 1, 9000]]),
+            ['customer_id' => 999999] + $this->sale('c-4', 'K01-20261120-0004', now()->subMinutes(30), [[$this->kg, 1, 9000]]),
+        ])->assertOk()->assertJsonPath('summary.created', 4);
+
+        $result->assertJsonPath('data.0.customer_id', $budi->id)
+            ->assertJsonPath('data.0.customer_dropped', false)
+            ->assertJsonPath('data.0.needs_review', false);
+
+        foreach ([1, 2, 3] as $i) {
+            $result->assertJsonPath("data.{$i}.customer_id", null)
+                ->assertJsonPath("data.{$i}.customer_dropped", true)
+                ->assertJsonPath("data.{$i}.needs_review", true);
+        }
+
+        $this->assertSame('Pak Hilang', Transaction::query()->where('invoice_no', 'K01-20261120-0002')->value('customer_name'));
+        $this->assertSame('96.000', $this->feed->refresh()->current_stock);
+
+        // Kirim ulang: tetap duplikat, tidak tercatat dua kali.
+        $this->sync([['customer_id' => $budi->id] + $this->sale('c-1', 'K01-20261120-0001', now()->subHour(), [[$this->kg, 1, 9000]])])
+            ->assertJsonPath('data.0.status', 'duplicate');
+
+        $this->assertSame(['Pelanggan tidak aktif'], \App\Filament\Resources\TransactionResource::reviewFlags(
+            Transaction::query()->where('invoice_no', 'K01-20261120-0003')->sole(),
+        ));
+    }
+
+    public function test_offline_time_with_phone_timezone_is_stored_as_the_real_moment(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-20 05:00', 'UTC')); // 12:00 WIB
+        $token = $this->login($this->cashier, 'K01')->json('access_token');
+
+        // HP mengirim jam lokal WIB dengan offset: 09:15+07:00 = 02:15 UTC.
+        $sale = $this->sale('tz-1', 'K01-20261120-0101', '2026-11-20 05:00', [[$this->kg, 1, 9000]]);
+        $sale['occurred_at'] = '2026-11-20T09:15:00+07:00';
+
+        $this->api('post', '/api/v1/sync/transactions', ['transactions' => [$sale]], $token)
+            ->assertJsonPath('data.0.status', 'created');
+
+        $this->assertSame('2026-11-20 02:15:00', Transaction::query()->sole()->occurred_at->utc()->format('Y-m-d H:i:s'));
+
+        $this->api('get', '/api/v1/pos/summary', [], $token)->assertJsonPath('hourly.0.hour', 9);
     }
 
     private function login(User $user, ?string $deviceCode = null)

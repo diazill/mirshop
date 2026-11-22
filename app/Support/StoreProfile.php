@@ -39,13 +39,19 @@ final class StoreProfile
         'Asia/Jayapura' => 'WIT (Asia/Jayapura)',
     ];
 
-    /** @return array<string, string|null> */
-    public static function all(): array
+    /**
+     * @param  bool  $nameFallback  true: nama kosong diganti APP_NAME (struk kasir butuh nama);
+     *                              false: tetap null (toko online punya nilai cadangan sendiri)
+     * @return array<string, string|null>
+     */
+    public static function all(bool $nameFallback = true): array
     {
         $stored = Setting::query()->whereIn('key', array_keys(self::DEFAULTS))->pluck('value', 'key')->all();
 
         $values = array_merge(self::DEFAULTS, array_filter($stored, fn ($v) => $v !== null && $v !== ''));
-        $values['store_name'] ??= config('app.name');
+        if ($nameFallback) {
+            $values['store_name'] ??= config('app.name');
+        }
 
         return $values;
     }
@@ -70,7 +76,7 @@ final class StoreProfile
     /** Info toko untuk toko online (GET /v1/store/public). Hanya data yang memang ditampilkan ke publik. */
     public static function publicPayload(): array
     {
-        $v = self::all();
+        $v = self::all(nameFallback: false);
         $timezone = array_key_exists((string) $v['store_timezone'], self::TIMEZONES) ? $v['store_timezone'] : self::DEFAULTS['store_timezone'];
         $hours = new StoreHours($timezone);
 

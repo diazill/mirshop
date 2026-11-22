@@ -16,7 +16,7 @@ use App\Http\Middleware\PublicCacheHeaders;
 
 Route::prefix('v1')->group(function () {
     // Katalog publik untuk toko online: tanpa login, di-cache 60 detik.
-    Route::middleware(['throttle:120,1', PublicCacheHeaders::class])->group(function () {
+    Route::middleware(['throttle:public-api', PublicCacheHeaders::class])->group(function () {
         Route::get('/products', [ProductController::class, 'index']);
         Route::get('/products/{key}', [ProductController::class, 'show']);
         Route::get('/categories', [CatalogController::class, 'categories']);

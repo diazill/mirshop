@@ -123,9 +123,9 @@ class StorefrontApiTest extends TestCase
         $this->getJson('/api/v1/categories')
             ->assertOk()
             ->assertExactJson(['data' => [
-                ['id' => $cat->id, 'name' => 'Kucing', 'slug' => 'kucing', 'parent_id' => null, 'product_count' => 2, 'sort_order' => 1],
-                ['id' => $dog->id, 'name' => 'Anjing', 'slug' => 'anjing', 'parent_id' => null, 'product_count' => 1, 'sort_order' => 2],
-                ['id' => $poultry->id, 'name' => 'Unggas', 'slug' => 'unggas', 'parent_id' => null, 'product_count' => 0, 'sort_order' => 3],
+                ['id' => $cat->id, 'name' => 'Kucing', 'slug' => 'kucing', 'parent_id' => null, 'product_count' => 2, 'product_count_total' => 2, 'sort_order' => 1],
+                ['id' => $dog->id, 'name' => 'Anjing', 'slug' => 'anjing', 'parent_id' => null, 'product_count' => 1, 'product_count_total' => 1, 'sort_order' => 2],
+                ['id' => $poultry->id, 'name' => 'Unggas', 'slug' => 'unggas', 'parent_id' => null, 'product_count' => 0, 'product_count_total' => 0, 'sort_order' => 3],
             ]]);
 
         $this->getJson('/api/v1/brands')
@@ -135,13 +135,71 @@ class StorefrontApiTest extends TestCase
             ->assertJsonPath('data.1.product_count', 2);
     }
 
+    public function test_batch_lookup_by_ids_or_slugs_for_cart_and_prerender(): void
+    {
+        $a = $this->product('Pakan A');
+        $b = $this->product('Pakan B');
+        $inactive = $this->product('Pakan C', ['is_active' => false]);
+        $renamed = $this->product('Pakan D');
+        $renamed->update(['slug' => 'pakan-d-baru']);
+
+        $ids = fn ($response): array => array_column($response->assertOk()->json('data'), 'id');
+
+        $this->assertEqualsCanonicalizing([$a->id, $b->id], $ids($this->getJson("/api/v1/products?ids={$a->id},{$b->id},{$inactive->id},999")));
+        $this->assertEqualsCanonicalizing(
+            [$a->id, $renamed->id],
+            $ids($this->getJson('/api/v1/products?slugs=pakan-a,pakan-d,pakan-c,tidak-ada')), // pakan-d = slug lama
+        );
+
+        $this->getJson('/api/v1/products?ids=1,abc')->assertUnprocessable()->assertJsonPath('code', 'VALIDASI_GAGAL');
+        $this->getJson('/api/v1/products?ids=' . implode(',', range(1, 101)))->assertUnprocessable()->assertJsonValidationErrors('ids');
+    }
+
+    public function test_parent_category_can_include_products_of_its_subcategories(): void
+    {
+        $poultry = Category::query()->create(['name' => 'Poultry']);
+        $chicken = Category::query()->create(['name' => 'Unggas', 'parent_id' => $poultry->id]);
+        $bird = Category::query()->create(['name' => 'Burung', 'parent_id' => $poultry->id]);
+        $pigeon = Category::query()->create(['name' => 'Merpati', 'parent_id' => $bird->id]);
+
+        $this->product('Pakan Ayam', ['category_id' => $chicken->id]);
+        $this->product('Pakan Burung', ['category_id' => $bird->id]);
+        $this->product('Pakan Merpati', ['category_id' => $pigeon->id]);
+        $this->product('Nonaktif', ['category_id' => $pigeon->id, 'is_active' => false]);
+
+        $this->getJson('/api/v1/products?category=poultry')->assertJsonPath('total', 0);
+        $this->getJson('/api/v1/products?category=poultry&include_children=1')->assertJsonPath('total', 3);
+        $this->getJson("/api/v1/products?category_id={$bird->id}&include_children=1")->assertJsonPath('total', 2);
+
+        $counts = collect($this->getJson('/api/v1/categories')->json('data'))->keyBy('slug');
+        $this->assertSame([0, 3], [$counts['poultry']['product_count'], $counts['poultry']['product_count_total']]);
+        $this->assertSame([1, 2], [$counts['burung']['product_count'], $counts['burung']['product_count_total']]);
+    }
+
+    public function test_storefront_server_key_gets_a_higher_rate_limit(): void
+    {
+        config(['services.storefront.key' => 'rahasia-toko', 'services.storefront.per_minute' => 300]);
+        $this->product('Pakan A');
+
+        for ($i = 0; $i < 120; $i++) {
+            $this->getJson('/api/v1/categories')->assertOk();
+        }
+        $this->getJson('/api/v1/categories')->assertStatus(429)->assertJsonPath('code', 'TERLALU_BANYAK_PERMINTAAN');
+
+        // Kunci salah = pengunjung biasa (ikut batas IP); kunci benar = batas sendiri.
+        $this->withHeader('X-Storefront-Key', 'salah')->getJson('/api/v1/categories')->assertStatus(429);
+        for ($i = 0; $i < 150; $i++) {
+            $this->withHeader('X-Storefront-Key', 'rahasia-toko')->getJson('/api/v1/categories')->assertOk();
+        }
+    }
+
     // --- Info toko publik ----------------------------------------------------------------------
 
     public function test_store_info_is_null_safe_before_the_owner_fills_it(): void
     {
         $this->getJson('/api/v1/store/public')
             ->assertOk()
-            ->assertJsonPath('data.name', config('app.name'))
+            ->assertJsonPath('data.name', null) // bukan APP_NAME: toko online memakai nilai cadangannya sendiri
             ->assertJsonPath('data.address.street', null)
             ->assertJsonPath('data.address.country', 'ID')
             ->assertJsonPath('data.whatsapp', null)

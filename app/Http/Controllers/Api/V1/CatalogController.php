@@ -19,27 +19,42 @@ class CatalogController extends Controller
      * Daftar kategori.
      *
      * Semua kategori, termasuk yang belum punya produk. `product_count` hanya menghitung produk aktif
-     * langsung di kategori itu. Urut `sort_order` (diatur di dashboard), lalu nama. Tanpa paginasi.
+     * langsung di kategori itu; `product_count_total` ditambah semua subkategorinya (sama dengan hasil
+     * `GET /products?category={slug}&include_children=1`). Urut `sort_order` (diatur di dashboard),
+     * lalu nama. Tanpa paginasi.
      * Hasil di-cache 60 detik.
      *
      * @unauthenticated
      */
     public function categories(Request $request): JsonResponse
     {
-        $data = PublicResponseCache::remember($request, [], fn (): array => Category::query()
-            ->withCount(['products' => fn ($q) => $q->where('is_active', true)])
-            ->orderBy('sort_order')
-            ->orderBy('name')
-            ->get()
-            ->map(fn (Category $c): array => [
+        $data = PublicResponseCache::remember($request, [], function (): array {
+            $categories = Category::query()
+                ->withCount(['products' => fn ($q) => $q->where('is_active', true)])
+                ->orderBy('sort_order')
+                ->orderBy('name')
+                ->get();
+
+            // Jumlah per subpohon. Dijaga dari siklus parent (data lama) dengan daftar yang sudah dikunjungi.
+            $total = function (Category $category, array $seen = []) use (&$total, $categories): int {
+                $seen[] = $category->id;
+
+                return $category->products_count + $categories
+                    ->where('parent_id', $category->id)
+                    ->reject(fn (Category $child): bool => in_array($child->id, $seen, true))
+                    ->sum(fn (Category $child): int => $total($child, $seen));
+            };
+
+            return $categories->map(fn (Category $c): array => [
                 'id' => $c->id,
                 'name' => $c->name,
                 'slug' => $c->slug,
                 'parent_id' => $c->parent_id,
                 'product_count' => $c->products_count,
+                'product_count_total' => $total($c),
                 'sort_order' => $c->sort_order,
-            ])
-            ->all());
+            ])->all();
+        });
 
         return response()->json(['data' => $data]);
     }

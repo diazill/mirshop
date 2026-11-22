@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\Category;
 use App\Models\Product;
+use App\Models\ProductSlug;
 use App\Support\ProductImageUrl;
 use App\Support\PublicResponseCache;
 use Dedoc\Scramble\Attributes\Group;
@@ -19,8 +21,11 @@ class ProductController extends Controller
      *
      * Untuk toko online. HPP dan jumlah stok tidak dikirim, hanya `stock_status` (tersedia/habis).
      * Filter kategori/merek bisa memakai id (`category_id`, `brand_id`) atau slug (`category`, `brand`);
-     * slug yang tidak dikenal menghasilkan daftar kosong. Hasil di-cache 60 detik.
-     * Dibatasi 120 permintaan per menit.
+     * slug yang tidak dikenal menghasilkan daftar kosong. `include_children=1` ikut menyertakan produk
+     * di semua subkategori. `ids` / `slugs` (dipisah koma, maks. 100) mengambil produk tertentu sekaligus,
+     * mis. untuk keranjang atau prerender; slug lama dan produk nonaktif ditangani seperti detail
+     * produk (nonaktif tidak disertakan). Hasil di-cache 60 detik.
+     * Dibatasi 120 permintaan per menit per IP (server toko online dengan `X-Storefront-Key`: lebih tinggi).
      *
      * @unauthenticated
      */
@@ -37,6 +42,12 @@ class ProductController extends Controller
             'sort' => ['nullable', Rule::in(['featured', 'price_asc', 'price_desc', 'title'])],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
             'page' => ['nullable', 'integer', 'min:1'],
+            /** Ikut sertakan produk di subkategori (untuk filter `category`/`category_id`). */
+            'include_children' => ['nullable', 'boolean'],
+            /** Id produk dipisah koma, maks. 100, mis. `8,12`. */
+            'ids' => ['nullable', 'string', 'regex:/^\d+(,\d+)*$/', $this->maxItems()],
+            /** Slug produk dipisah koma, maks. 100. Slug lama juga dikenali. */
+            'slugs' => ['nullable', 'string', 'max:20000', 'regex:/^[a-z0-9-]+(,[a-z0-9-]+)*$/', $this->maxItems()],
         ]);
 
         $page = PublicResponseCache::remember($request, $filters, function () use ($filters): array {
@@ -47,10 +58,19 @@ class ProductController extends Controller
                         ->whereRaw("LOWER(title) LIKE ? ESCAPE '!'", [$search])
                         ->orWhereRaw("LOWER(blurb) LIKE ? ESCAPE '!'", [$search]));
                 })
-                ->when(isset($filters['category_id']), fn ($query) => $query->where('category_id', $filters['category_id']))
+                ->when(isset($filters['category_id']) || isset($filters['category']), fn ($query) => $query->whereIn(
+                    'category_id',
+                    $this->categoryIds($filters['category_id'] ?? null, $filters['category'] ?? null, (bool) ($filters['include_children'] ?? false)),
+                ))
                 ->when(isset($filters['brand_id']), fn ($query) => $query->where('brand_id', $filters['brand_id']))
-                ->when(isset($filters['category']), fn ($query) => $query->whereHas('category', fn ($q) => $q->where('slug', $filters['category'])))
-                ->when(isset($filters['brand']), fn ($query) => $query->whereHas('brand', fn ($q) => $q->where('slug', $filters['brand'])));
+                ->when(isset($filters['brand']), fn ($query) => $query->whereHas('brand', fn ($q) => $q->where('slug', $filters['brand'])))
+                ->when(isset($filters['ids']), fn ($query) => $query->whereIn('id', array_map('intval', explode(',', $filters['ids']))))
+                ->when(isset($filters['slugs']), function ($query) use ($filters): void {
+                    $slugs = explode(',', $filters['slugs']);
+                    $query->where(fn ($q) => $q
+                        ->whereIn('slug', $slugs)
+                        ->orWhereIn('id', ProductSlug::query()->whereIn('slug', $slugs)->select('product_id')));
+                });
 
             match ($filters['sort'] ?? 'featured') {
                 'price_asc' => $products->orderBy('price'),
@@ -96,6 +116,38 @@ class ProductController extends Controller
         abort_if($data === null, 404);
 
         return response()->json(['data' => $data]);
+    }
+
+    /** @return array<int, int> kategori yang diminta (+ semua turunannya bila diminta) */
+    private function categoryIds(?int $id, ?string $slug, bool $withChildren): array
+    {
+        $all = Category::query()->get(['id', 'slug', 'parent_id']);
+        $root = $id ?? $all->firstWhere('slug', $slug)?->id;
+
+        if ($root === null) {
+            return [];
+        }
+
+        $ids = [$root];
+
+        for ($i = 0; $withChildren && $i < count($ids); $i++) {
+            foreach ($all->where('parent_id', $ids[$i]) as $child) {
+                if (! in_array($child->id, $ids, true)) {
+                    $ids[] = $child->id;
+                }
+            }
+        }
+
+        return $ids;
+    }
+
+    private function maxItems(): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail): void {
+            if (count(explode(',', (string) $value)) > 100) {
+                $fail('Maksimal 100 item per permintaan.');
+            }
+        };
     }
 
     private function publicQuery()

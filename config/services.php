@@ -24,6 +24,12 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    // Server toko online (Next.js): header X-Storefront-Key untuk batas request katalog publik yang lebih tinggi.
+    'storefront' => [
+        'key' => env('STOREFRONT_API_KEY'),
+        'per_minute' => (int) env('STOREFRONT_API_PER_MINUTE', 1200),
+    ],
+
     'resend' => [
         'key' => env('RESEND_KEY'),
     ],

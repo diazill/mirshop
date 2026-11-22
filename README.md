@@ -82,6 +82,7 @@ Variabel penting di `.env` (isi sesuai lingkungan masing-masing; **jangan pernah
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`, `AWS_BUCKET` | Penyimpanan foto (disk `s3`) |
 | `AWS_ENDPOINT`, `AWS_URL`, `AWS_USE_PATH_STYLE_ENDPOINT` | Wajib untuk penyimpanan S3-compatible selain AWS. `AWS_URL` = URL publik bucket untuk menampilkan foto |
 | `CACHE_STORE` | Disarankan `file` atau `redis` bila database jauh dari server (rate limiter memakai cache) |
+| `STOREFRONT_API_KEY`, `STOREFRONT_API_PER_MINUTE` | Kunci rahasia server toko online (header `X-Storefront-Key`) untuk batas request katalog publik yang lebih tinggi. Kosong = fitur mati |
 
 Zona waktu aplikasi tetap UTC. Zona waktu toko (WIB/WITA/WIT) diatur owner di **Pengaturan → Pengaturan Toko**.
 

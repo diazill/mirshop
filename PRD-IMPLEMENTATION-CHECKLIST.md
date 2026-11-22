@@ -171,12 +171,12 @@ Fondasi yang dibuat setelah audit:
 - [ ] Saldo piutang / bon (ditunda owner; kolom `customers.credit_limit` sudah disiapkan, belum dipakai)
 
 ### 3.8 ADM-08: Pengaturan toko
-- [ ] Store schedules flow lengkap
+- [x] Store schedules flow lengkap (Pengaturan Toko: jam buka per hari, libur khusus)
 - [x] Informasi toko (menu Pengaturan > Pengaturan Toko, owner: nama, alamat, telepon, catatan kaki struk, logo, zona waktu; `GET /store`)
 - [ ] Metode pembayaran
 - [ ] Area dan biaya antar
-- [ ] Nomor WhatsApp admin
-- [ ] Pengaruh langsung ke toko online melalui API
+- [x] Nomor WhatsApp toko (Pengaturan Toko, dipakai toko online)
+- [x] Pengaruh langsung ke toko online melalui API (`GET /store/public`, cache maks. 60 detik)
 
 ### 3.9 ADM-09: Pengguna dan peran
 - [x] User resource dasar
@@ -214,9 +214,10 @@ Fondasi yang dibuat setelah audit:
 
 ### 4.2 Endpoint API publik
 - [x] `GET /products` (aktif saja; cari, filter kategori/merek, urut; `stock_status` tanpa jumlah; throttle 120/menit)
-- [ ] `GET /products/{slug}`
-- [ ] `GET /categories`
-- [ ] `GET /store/schedule`
+- [x] `GET /products/{slug}` (juga id angka dan slug lama; slug tidak ikut berubah saat nama diganti, riwayat di `product_slugs`)
+- [x] `GET /categories` (+ `GET /brands`; slug, jumlah produk aktif, urutan kategori bisa diseret di dashboard)
+- [x] `GET /store/schedule`, dibuat sebagai `GET /store/public`: alamat, kontak, WhatsApp, jadwal mingguan, libur khusus, status buka saat ini
+- [x] Katalog publik di-cache 60 detik + header `Cache-Control: public` (respons ±3,8 dtk → dari cache)
 - [ ] `POST /register`
 - [ ] `POST /login`
 - [ ] `GET /me`

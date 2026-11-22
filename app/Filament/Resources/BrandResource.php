@@ -27,6 +27,23 @@ class BrandResource extends Resource
                 Forms\Components\TextInput::make('name')
                     ->required()
                     ->maxLength(255),
+                Forms\Components\TextInput::make('slug')
+                    ->label('Slug (alamat di toko online)')
+                    ->maxLength(180)
+                    ->helperText('Dipakai di URL toko online, mis. /produk?brand=royal-canin. Kosongkan untuk dibuat otomatis.')
+                    ->rules([
+                        fn (?\App\Models\Brand $record) => function (string $attribute, mixed $value, \Closure $fail) use ($record): void {
+                            if (blank($value)) {
+                                return;
+                            }
+
+                            $model = $record ?? new \App\Models\Brand();
+
+                            if ($model->slugTaken($model->normalizedSlug((string) $value))) {
+                                $fail('Slug ini sudah dipakai.');
+                            }
+                        },
+                    ]),
                 Forms\Components\FileUpload::make('logo')
                     ->image()
                     ->directory('brands')

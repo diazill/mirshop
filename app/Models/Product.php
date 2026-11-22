@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasSlug;
 use App\Models\Concerns\RecordsSyncDeletion;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -15,10 +16,58 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Product extends Model
 {
-    use HasFactory, RecordsSyncDeletion, SoftDeletes;
+    use HasFactory, HasSlug, RecordsSyncDeletion, SoftDeletes;
+
+    protected static function booted(): void
+    {
+        // Slug diganti: simpan slug lama agar tautan lama tetap membuka produk ini.
+        static::updated(function (Product $product): void {
+            if (! $product->wasChanged('slug')) {
+                return; // update stok/harga: tanpa query tambahan
+            }
+
+            $old = $product->getOriginal('slug');
+
+            if (filled($old)) {
+                ProductSlug::query()->firstOrCreate(['slug' => $old], ['product_id' => $product->id]);
+            }
+
+            // Kembali memakai slug lama sendiri: hapus dari riwayat.
+            ProductSlug::query()->where('product_id', $product->id)->where('slug', $product->slug)->delete();
+        });
+    }
+
+    /** Cari produk dari id (tautan lama /produk/8), slug, atau slug lama. Termasuk yang nonaktif. */
+    public static function findForStorefront(string $key): ?self
+    {
+        if (ctype_digit($key)) {
+            return static::query()->find((int) $key);
+        }
+
+        return static::query()->where('slug', $key)->first()
+            ?? ProductSlug::query()->where('slug', $key)->first()?->product;
+    }
+
+    protected function slugSource(): string
+    {
+        return 'title';
+    }
+
+    protected function slugFallback(): string
+    {
+        return 'produk';
+    }
+
+    protected function slugReservedElsewhere(string $slug): bool
+    {
+        return ProductSlug::query()
+            ->where('slug', $slug)
+            ->when($this->exists, fn ($q) => $q->where('product_id', '!=', $this->id))
+            ->exists();
+    }
 
     protected $fillable = [
-        'sku', 'title', 'blurb', 'price', 'cost_price', 'weight_gram',
+        'sku', 'title', 'slug', 'blurb', 'price', 'cost_price', 'weight_gram',
         'is_best_product', 'min_stock', 'is_active',
         'category_id', 'brand_id'
     ];
@@ -29,6 +78,11 @@ class Product extends Model
         'current_stock' => 'decimal:3',
         'min_stock' => 'decimal:3',
     ];
+
+    public function slugs(): HasMany
+    {
+        return $this->hasMany(ProductSlug::class);
+    }
 
     public function units(): HasMany
     {

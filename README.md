@@ -99,7 +99,7 @@ Semua endpoint di bawah prefix `/api/v1`. Dokumentasi lengkap (Scramble) tersedi
 
 | Grup | Endpoint | Akses |
 |---|---|---|
-| Katalog publik | `GET /products` | Publik |
+| Katalog publik | `GET /products`, `GET /products/{slug}`, `GET /categories`, `GET /brands`, `GET /store/public` | Publik (di-cache 60 detik) |
 | Login | `POST /auth/login`, `POST /auth/logout`, `GET /me` | Staf |
 | Kasir | `GET /barcode/{barcode}`, `GET/POST /pos/transactions`, `GET /pos/transactions/{id}`, `POST /pos/transactions/{id}/cancel`, `GET /pos/summary`, `GET /store` | Owner, admin, kasir (batal: owner) |
 | Pelanggan | `GET/POST /customers`, `GET /customers/{id}` | Owner, admin, kasir |

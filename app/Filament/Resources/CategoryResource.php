@@ -27,6 +27,28 @@ class CategoryResource extends Resource
                 Forms\Components\TextInput::make('name')
                     ->required()
                     ->maxLength(255),
+                Forms\Components\TextInput::make('slug')
+                    ->label('Slug (alamat di toko online)')
+                    ->maxLength(180)
+                    ->helperText('Dipakai di URL filter toko online, mis. /produk?kategori=kucing. Kosongkan untuk dibuat otomatis.')
+                    ->rules([
+                        fn (?\App\Models\Category $record) => function (string $attribute, mixed $value, \Closure $fail) use ($record): void {
+                            if (blank($value)) {
+                                return;
+                            }
+
+                            $model = $record ?? new \App\Models\Category();
+
+                            if ($model->slugTaken($model->normalizedSlug((string) $value))) {
+                                $fail('Slug ini sudah dipakai.');
+                            }
+                        },
+                    ]),
+                Forms\Components\TextInput::make('sort_order')
+                    ->label('Urutan di toko online')
+                    ->numeric()
+                    ->default(0)
+                    ->helperText('Angka kecil tampil lebih dulu. Bisa juga diatur dengan seret di daftar kategori.'),
                 Forms\Components\Select::make('parent_id')
                     ->relationship('parent', 'name')
                     ->searchable()
@@ -38,9 +60,13 @@ class CategoryResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->defaultSort('sort_order')
+            ->reorderable('sort_order')
             ->columns([
                 Tables\Columns\TextColumn::make('name')
                     ->searchable(),
+                Tables\Columns\TextColumn::make('slug')
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('parent.name')
                     ->label('Parent Category')
                     ->sortable(),

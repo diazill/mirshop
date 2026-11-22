@@ -19,6 +19,18 @@ final class StoreProfile
         'receipt_footer' => 'Terima kasih',
         'store_logo' => null,
         'store_timezone' => 'Asia/Jakarta',
+        // Toko online (GET /store/public). Kosong = null di API; Next.js punya nilai cadangan.
+        'store_landmark' => null,
+        'store_street' => null,
+        'store_city' => null,
+        'store_province' => null,
+        'store_postal_code' => null,
+        'store_country' => 'ID',
+        'store_maps_url' => null,
+        'store_latitude' => null,
+        'store_longitude' => null,
+        'store_whatsapp' => null,
+        'store_email' => null,
     ];
 
     public const TIMEZONES = [
@@ -53,6 +65,49 @@ final class StoreProfile
         $timezone = (string) Setting::query()->whereKey('store_timezone')->value('value');
 
         return array_key_exists($timezone, self::TIMEZONES) ? $timezone : self::DEFAULTS['store_timezone'];
+    }
+
+    /** Info toko untuk toko online (GET /v1/store/public). Hanya data yang memang ditampilkan ke publik. */
+    public static function publicPayload(): array
+    {
+        $v = self::all();
+        $timezone = array_key_exists((string) $v['store_timezone'], self::TIMEZONES) ? $v['store_timezone'] : self::DEFAULTS['store_timezone'];
+        $hours = new StoreHours($timezone);
+
+        return [
+            'name' => $v['store_name'],
+            'address' => [
+                'landmark' => $v['store_landmark'],
+                'street' => $v['store_street'],
+                'city' => $v['store_city'],
+                'province' => $v['store_province'],
+                'postal_code' => $v['store_postal_code'],
+                'country' => $v['store_country'],
+            ],
+            'maps_url' => $v['store_maps_url'],
+            'latitude' => is_numeric($v['store_latitude']) ? (float) $v['store_latitude'] : null,
+            'longitude' => is_numeric($v['store_longitude']) ? (float) $v['store_longitude'] : null,
+            'phone' => $v['store_phone'],
+            'whatsapp' => self::whatsappDigits($v['store_whatsapp']),
+            'email' => $v['store_email'],
+            'logo_url' => ProductImageUrl::for($v['store_logo']),
+            'timezone' => $timezone,
+            'schedule' => $hours->schedule(),
+            'closures' => $hours->upcomingClosures(),
+            'status' => $hours->status(),
+        ];
+    }
+
+    /** "0851-5542-8611" / "+62 851…" → "6285155428611" (untuk https://wa.me/…). */
+    public static function whatsappDigits(?string $value): ?string
+    {
+        $digits = preg_replace('/\D/', '', (string) $value);
+
+        if ($digits === '') {
+            return null;
+        }
+
+        return str_starts_with($digits, '0') ? '62' . substr($digits, 1) : $digits;
     }
 
     /** Bentuk untuk API: GET /v1/store dan field `store` di katalog sinkron. */

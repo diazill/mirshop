@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BarcodeController;
+use App\Http\Controllers\Api\V1\CatalogController;
 use App\Http\Controllers\Api\V1\CustomerController;
 use App\Http\Controllers\Api\V1\PosTransactionController;
 use App\Http\Controllers\Api\V1\ProductController;
@@ -11,10 +12,17 @@ use App\Http\Controllers\Api\V1\ProductUnitBarcodeController;
 use App\Http\Controllers\Api\V1\StoreController;
 use App\Http\Controllers\Api\V1\WarehouseStockController;
 use App\Http\Controllers\Api\V1\SyncController;
+use App\Http\Middleware\PublicCacheHeaders;
 
 Route::prefix('v1')->group(function () {
-    Route::get('/products', [ProductController::class, 'index'])
-        ->middleware('throttle:120,1');
+    // Katalog publik untuk toko online: tanpa login, di-cache 60 detik.
+    Route::middleware(['throttle:120,1', PublicCacheHeaders::class])->group(function () {
+        Route::get('/products', [ProductController::class, 'index']);
+        Route::get('/products/{key}', [ProductController::class, 'show']);
+        Route::get('/categories', [CatalogController::class, 'categories']);
+        Route::get('/brands', [CatalogController::class, 'brands']);
+        Route::get('/store/public', [CatalogController::class, 'store']);
+    });
 
     Route::post('/auth/login', [AuthController::class, 'login'])
         ->middleware('throttle:5,1');

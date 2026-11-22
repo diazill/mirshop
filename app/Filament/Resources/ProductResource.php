@@ -41,6 +41,23 @@ class ProductResource extends Resource
                     ->required()
                     ->maxLength(255)
                     ->helperText('Nama lengkap produk yang akan ditampilkan ke pelanggan.'),
+                Forms\Components\TextInput::make('slug')
+                    ->label('Slug (alamat di toko online)')
+                    ->maxLength(180)
+                    ->helperText('Kosongkan untuk dibuat otomatis dari nama. Tidak ikut berubah saat nama diganti. Bila diganti, alamat lama tetap membuka produk ini.')
+                    ->rules([
+                        fn (?\App\Models\Product $record) => function (string $attribute, mixed $value, \Closure $fail) use ($record): void {
+                            if (blank($value)) {
+                                return;
+                            }
+
+                            $model = $record ?? new \App\Models\Product();
+
+                            if ($model->slugTaken($model->normalizedSlug((string) $value))) {
+                                $fail('Slug ini sudah dipakai.');
+                            }
+                        },
+                    ]),
                 Forms\Components\Select::make('category_id')
                     ->relationship('category', 'name')
                     ->searchable()

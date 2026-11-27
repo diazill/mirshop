@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use Dedoc\Scramble\Attributes\Group;
 use App\Models\Device;
+use App\Support\AuditLogger;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -55,9 +56,20 @@ class AuthController extends Controller
         }
 
         $credentials = $validator->validated();
-        $user = User::findForLogin($credentials['login'] ?? $credentials['email']);
+        $login = (string) ($credentials['login'] ?? $credentials['email']);
+        $user = User::findForLogin($login);
+        // Dicatat untuk owner: siapa mencoba login dari perangkat apa. Password tidak pernah dicatat.
+        $failed = fn (string $reason) => AuditLogger::record(
+            action: 'login_failed',
+            subjectType: 'user',
+            subjectId: $user?->id,
+            subjectLabel: $login,
+            context: array_filter(['reason' => $reason, 'device_code' => $credentials['device_code'] ?? null]),
+        );
 
         if (! $user || ! Hash::check($credentials['password'], $user->password)) {
+            $failed($user ? 'password_salah' : 'akun_tidak_ditemukan');
+
             return response()->json([
                 'code' => 'KREDENSIAL_TIDAK_VALID',
                 'message' => 'Username/email atau kata sandi salah.',
@@ -65,6 +77,8 @@ class AuthController extends Controller
         }
 
         if (! $user->is_active) {
+            $failed('akun_nonaktif');
+
             return response()->json([
                 'code' => 'AKUN_NONAKTIF',
                 'message' => 'Akun tidak aktif.',
@@ -77,6 +91,8 @@ class AuthController extends Controller
             $device = Device::query()->where('code', strtoupper($credentials['device_code']))->first();
 
             if (! $device || ! $device->is_active) {
+                $failed($device ? 'perangkat_nonaktif' : 'perangkat_tidak_dikenal');
+
                 return response()->json([
                     'code' => $device ? 'PERANGKAT_NONAKTIF' : 'PERANGKAT_TIDAK_DIKENAL',
                     'message' => $device
@@ -93,6 +109,15 @@ class AuthController extends Controller
             $newToken->accessToken->forceFill(['device_id' => $device->id])->save();
             $device->users()->syncWithoutDetaching([$user->id => ['last_login_at' => now()]]);
         }
+
+        AuditLogger::record(
+            action: 'login_success',
+            subjectType: 'user',
+            subjectId: $user->id,
+            subjectLabel: $user->username ?: $user->name,
+            context: array_filter(['device_code' => $device?->code, 'device_name' => $credentials['device_name']]),
+            actor: $user,
+        );
 
         return response()->json([
             'access_token' => $newToken->plainTextToken,

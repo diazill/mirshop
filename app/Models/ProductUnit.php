@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use App\Models\Concerns\RecordsSyncDeletion;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -17,7 +18,23 @@ use Illuminate\Support\Facades\Auth;
  */
 class ProductUnit extends Model
 {
-    use HasFactory, RecordsSyncDeletion;
+    use Auditable, HasFactory, RecordsSyncDeletion;
+
+    public function auditedFields(): array
+    {
+        return ['unit_id', 'conversion_qty', 'is_base', 'barcode', 'is_sellable', 'is_purchasable', 'allow_decimal_qty'];
+    }
+
+    public function auditLabel(): string
+    {
+        $row = self::query()
+            ->join('products', 'products.id', '=', 'product_units.product_id')
+            ->join('units', 'units.id', '=', 'product_units.unit_id')
+            ->where('product_units.id', $this->id)
+            ->first(['products.title', 'units.name']);
+
+        return $row ? "{$row->title} ({$row->name})" : "Satuan #{$this->id}";
+    }
 
     protected $fillable = [
         'product_id', 'unit_id', 'conversion_qty', 'is_base', 'barcode',

@@ -34,6 +34,7 @@ Aplikasi lain tidak boleh terhubung langsung ke database. Semua akses data lewat
 - Daftarkan barcode, opname, koreksi stok, upload foto produk.
 
 **Keamanan**
+- Audit log (khusus owner): login dashboard dan aplikasi HP (berhasil/gagal beserta alasannya), perubahan harga, HPP, satuan, pengguna, perangkat, token, dan pengaturan toko. Password dan token tidak pernah dicatat. Disimpan 2 tahun.
 - Peran: `owner`, `admin`, `kasir`, `gudang`. Hanya owner/admin yang bisa masuk panel.
 - Login dengan username atau email, user/perangkat nonaktif langsung ditolak, rate limit per endpoint.
 - Format error API seragam berbahasa Indonesia.
@@ -150,6 +151,12 @@ Aturan utama: stok hanya berubah lewat `StockService` (selalu tercatat di riwaya
 5. `npm ci && npm run build` bila ada perubahan aset
 
 Pastikan `APP_ENV=production` dan `APP_DEBUG=false` di server.
+
+Tugas terjadwal (pembersihan audit log lama) butuh satu baris cron di server:
+
+```
+* * * * * cd /path/ke/proyek && php artisan schedule:run >> /dev/null 2>&1
+```
 
 ## Lisensi
 

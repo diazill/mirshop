@@ -119,6 +119,14 @@ class UserResource extends Resource
                     ->visible(fn (User $record): bool => (bool) auth()->user()?->hasRole('owner'))
                     ->action(function (User $record): void {
                         $count = $record->tokens()->delete();
+                        // Hapus massal tidak memicu event model, jadi dicatat langsung.
+                        \App\Support\AuditLogger::record(
+                            action: 'token_revoked',
+                            subjectType: 'user',
+                            subjectId: $record->id,
+                            subjectLabel: $record->username ?: $record->name,
+                            context: ['jumlah_login' => $count],
+                        );
                         \Filament\Notifications\Notification::make()->success()->title("{$count} login dicabut.")->send();
                     }),
             ])

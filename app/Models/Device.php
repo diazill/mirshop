@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -10,6 +11,18 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /** HP kasir/gudang. Kode (mis. K01) menjadi awalan nomor nota yang dibuat offline. */
 class Device extends Model
 {
+    use Auditable;
+
+    public function auditedFields(): array
+    {
+        return ['code', 'name', 'is_active'];
+    }
+
+    public function auditLabel(): string
+    {
+        return trim("{$this->code} {$this->name}");
+    }
+
     protected $fillable = ['code', 'name', 'is_active'];
 
     protected $casts = [

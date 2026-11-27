@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Models\Concerns\Auditable;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -14,7 +15,22 @@ use Laravel\Sanctum\HasApiTokens;
 class User extends Authenticatable implements FilamentUser
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable;
+    use Auditable, HasApiTokens, HasFactory, Notifiable;
+
+    public function auditedFields(): array
+    {
+        return ['name', 'username', 'email', 'role', 'is_active', 'password'];
+    }
+
+    public function maskedAuditFields(): array
+    {
+        return ['password'];
+    }
+
+    public function auditLabel(): string
+    {
+        return (string) ($this->username ?: $this->name);
+    }
 
     public function canAccessPanel(Panel $panel): bool
     {

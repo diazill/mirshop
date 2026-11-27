@@ -289,18 +289,18 @@ class StorefrontApiTest extends TestCase
         // Form terisi bawaan Senin–Sabtu 09.00–17.00, Minggu tutup.
         Livewire::test(StoreSettings::class)
             ->assertFormSet(['schedule.1.is_open' => true, 'schedule.7.is_open' => false])
-            ->fillForm([
-                'store_name' => 'Toko Pakan',
-                'store_whatsapp' => '085155428611',
-                'schedule.6.open_time' => '08:00',
-                'schedule.6.close_time' => '12:00',
-                'closures' => [['date' => '2026-12-25', 'reason' => 'Natal']],
-            ])
+            // set() = perilaku browser; fillForm() akan mengganti seluruh array jadwal.
+            ->set('data.store_name', 'Toko Pakan')
+            ->set('data.store_whatsapp', '085155428611')
+            ->set('data.schedule.6.open_time', '08:00')
+            ->set('data.schedule.6.close_time', '12:00')
+            ->set('data.closures', ['a' => ['date' => '2026-12-25', 'reason' => 'Natal']])
             ->call('save')
             ->assertHasNoFormErrors();
 
         $this->assertSame(7, StoreSchedule::query()->count());
         $this->assertTrue(StoreSchedule::query()->where('day_of_week', 7)->value('is_closed'));
+        $this->assertFalse(StoreSchedule::query()->where('day_of_week', 1)->value('is_closed')); // hari lain tetap buka
         $this->assertSame('08:00', substr((string) StoreSchedule::query()->where('day_of_week', 6)->value('open_time'), 0, 5));
         $this->assertSame('Natal', StoreClosure::query()->value('reason'));
 
@@ -315,7 +315,8 @@ class StorefrontApiTest extends TestCase
         $this->actingAs($this->user('owner'));
 
         Livewire::test(StoreSettings::class)
-            ->fillForm(['schedule.2.open_time' => '17:00', 'schedule.2.close_time' => '09:00'])
+            ->set('data.schedule.2.open_time', '17:00')
+            ->set('data.schedule.2.close_time', '09:00')
             ->call('save')
             ->assertHasFormErrors(['schedule.2.close_time']);
 

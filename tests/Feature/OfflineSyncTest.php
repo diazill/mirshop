@@ -352,8 +352,11 @@ class OfflineSyncTest extends TestCase
         $gone->delete();
         $inactive = Customer::query()->create(['name' => 'Bu Libur', 'is_active' => false]);
 
+        // Satu nota yang sama persis, dipakai lagi saat kirim ulang (waktu tidak boleh bergeser).
+        $firstSale = $this->sale('c-1', 'K01-20261120-0001', now()->subHour(), [[$this->kg, 1, 9000]]);
+
         $result = $this->sync([
-            ['customer_id' => $budi->id] + $this->sale('c-1', 'K01-20261120-0001', now()->subHour(), [[$this->kg, 1, 9000]]),
+            ['customer_id' => $budi->id] + $firstSale,
             ['customer_id' => $gone->id] + $this->sale('c-2', 'K01-20261120-0002', now()->subMinutes(50), [[$this->kg, 1, 9000]]),
             ['customer_id' => $inactive->id] + $this->sale('c-3', 'K01-20261120-0003', now()->subMinutes(40), [[$this->kg, 1, 9000]]),
             ['customer_id' => 999999] + $this->sale('c-4', 'K01-20261120-0004', now()->subMinutes(30), [[$this->kg, 1, 9000]]),
@@ -373,7 +376,7 @@ class OfflineSyncTest extends TestCase
         $this->assertSame('96.000', $this->feed->refresh()->current_stock);
 
         // Kirim ulang: tetap duplikat, tidak tercatat dua kali.
-        $this->sync([['customer_id' => $budi->id] + $this->sale('c-1', 'K01-20261120-0001', now()->subHour(), [[$this->kg, 1, 9000]])])
+        $this->sync([['customer_id' => $budi->id] + $firstSale])
             ->assertJsonPath('data.0.status', 'duplicate');
 
         $this->assertSame(['Pelanggan tidak aktif'], \App\Filament\Resources\TransactionResource::reviewFlags(

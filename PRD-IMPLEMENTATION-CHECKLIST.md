@@ -284,9 +284,9 @@ Fondasi yang dibuat setelah audit:
 - [ ] Secrets hanya di `.env`
 - [ ] Backup DB schedule
 - [ ] Queue jobs for async tasks
-- [ ] Error logging
+- [ ] Error logging (log harian 14 hari via `LOG_STACK=daily`; notifikasi error ke owner belum)
 - [ ] Database portability (non-Supabase specific)
-- [ ] Audit log for changes
+- [x] Audit log for changes (menu Pengaturan > Audit log, owner: login panel/HP berhasil & gagal, harga/HPP/satuan, pengguna, perangkat, token, pengaturan toko, jam buka; password/token tidak dicatat; dihapus otomatis setelah 2 tahun)
 - [ ] UI Filament in Indonesian
 
 ## 7. Prioritas implementasi berikutnya

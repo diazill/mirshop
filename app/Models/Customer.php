@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use App\Models\Concerns\RecordsSyncDeletion;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -17,8 +18,25 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Customer extends Model
 {
+    use Auditable;
     use RecordsSyncDeletion;
     use SoftDeletes;
+
+    /** Pembuatan tidak dicatat (sering, dari kasir); yang dicatat: ganti nama, nonaktif, hapus. */
+    public function auditEvents(): array
+    {
+        return ['updated', 'deleted'];
+    }
+
+    public function auditedFields(): array
+    {
+        return ['name', 'is_active'];
+    }
+
+    public function auditLabel(): string
+    {
+        return (string) $this->name;
+    }
 
     protected $fillable = ['name', 'phone', 'address', 'notes', 'is_active'];
 

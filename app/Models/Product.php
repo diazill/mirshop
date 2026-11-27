@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use App\Models\Concerns\HasSlug;
 use App\Models\Concerns\RecordsSyncDeletion;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -16,7 +17,18 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Product extends Model
 {
-    use HasFactory, HasSlug, RecordsSyncDeletion, SoftDeletes;
+    use Auditable, HasFactory, HasSlug, RecordsSyncDeletion, SoftDeletes;
+
+    /** Diawasi audit log. Stok tidak (sudah tercatat di riwayat mutasi). */
+    public function auditedFields(): array
+    {
+        return ['title', 'slug', 'price', 'cost_price', 'is_active', 'category_id', 'brand_id', 'min_stock', 'is_best_product'];
+    }
+
+    public function auditLabel(): string
+    {
+        return (string) $this->title;
+    }
 
     protected static function booted(): void
     {

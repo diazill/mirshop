@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Models\StoreClosure;
 use App\Models\StoreSchedule;
+use App\Support\AuditLogger;
 use App\Support\StoreProfile;
 use Carbon\CarbonImmutable;
 use Filament\Forms;
@@ -162,7 +163,8 @@ class StoreSettings extends Page implements Forms\Contracts\HasForms
         $state = $this->form->getState();
 
         DB::transaction(function () use ($state): void {
-            StoreProfile::save($state);
+            $before = $this->hoursSnapshot();
+            StoreProfile::save($state); // tiap key yang berubah tercatat sendiri di audit log (model Setting)
 
             foreach (self::DAYS as $day => $name) {
                 $row = $state['schedule'][$day] ?? [];
@@ -187,8 +189,45 @@ class StoreSettings extends Page implements Forms\Contracts\HasForms
                     'reason' => blank($closure['reason'] ?? null) ? null : $closure['reason'],
                 ]);
             }
+
+            // Jadwal disimpan ulang seluruhnya; audit cukup satu baris berisi yang benar-benar berubah.
+            $after = $this->hoursSnapshot();
+            $changes = collect($after)
+                ->filter(fn (string $value, string $key): bool => ($before[$key] ?? null) !== $value)
+                ->mapWithKeys(fn (string $value, string $key): array => [$key => [$before[$key] ?? null, $value]])
+                ->all();
+
+            if ($changes !== []) {
+                AuditLogger::record(action: 'updated', subjectType: 'store_hours', subjectLabel: 'Jam buka & libur', changes: $changes);
+            }
         });
 
         Notification::make()->success()->title('Pengaturan toko disimpan.')->send();
+    }
+
+    /** @return array<string, string> {"Senin": "09:00–17:00", …, "Libur": "2026-12-25 Natal, …"} */
+    private function hoursSnapshot(): array
+    {
+        $rows = StoreSchedule::query()->orderBy('id')->get()->unique('day_of_week')->keyBy('day_of_week');
+        $today = CarbonImmutable::now(StoreProfile::timezone())->toDateString();
+
+        $snapshot = collect(self::DAYS)->mapWithKeys(function (string $name, int $day) use ($rows): array {
+            $row = $rows->get($day);
+
+            return [$name => match (true) {
+                $row === null => 'belum diatur',
+                $row->is_closed => 'tutup',
+                default => substr((string) $row->open_time, 0, 5) . '–' . substr((string) $row->close_time, 0, 5),
+            }];
+        })->all();
+
+        $snapshot['Libur'] = StoreClosure::query()
+            ->whereDate('date', '>=', $today)
+            ->orderBy('date')
+            ->get()
+            ->map(fn (StoreClosure $c): string => trim($c->date->toDateString() . ' ' . $c->reason))
+            ->implode(', ') ?: '-';
+
+        return $snapshot;
     }
 }
